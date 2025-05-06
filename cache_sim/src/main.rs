@@ -3,6 +3,7 @@ use std::fs::File;
 
 mod mem_stats;
 mod memory;
+mod main_memory;
 
 use crate::memory::{Memory, DataTypeSize, DataType, MemoryAccess};
 
