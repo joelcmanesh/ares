@@ -1,6 +1,7 @@
 use crate::mem_stats::*;
 use crate::main_memory::*;
 use crate::cache::*;
+use crate::direct_mapped_cache::*;
 
 const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
 

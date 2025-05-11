@@ -5,6 +5,7 @@ mod mem_stats;
 mod memory;
 mod main_memory;
 mod cache;
+mod direct_mapped_cache;
 
 use crate::memory::{Memory, DataTypeSize, DataType, MemoryAccess};
 
