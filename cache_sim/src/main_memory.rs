@@ -1,5 +1,7 @@
 use crate::memory::*;
 
+const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
+
 #[derive(Debug)]
 pub struct MainMemory {
     size: usize,
@@ -12,8 +14,18 @@ impl MainMemory {
     }
 }
 
+impl MemLevelAccess for MainMemory {
+    fn write_line(&mut self, addr: usize, words_per_lines: usize, data: Vec<u8>) {
+        // for i in 
+    }
+
+    fn fetch_line(&self, addr: usize, words_per_lines: usize) -> Vec<u8> {
+        vec![0; words_per_lines * WORDSIZE]
+    }
+}
+
 impl MemoryAccess for MainMemory {
-    fn read(&self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
         if addr >= self.size {
             return Err(MemoryError::OutOfBounds);
         }
