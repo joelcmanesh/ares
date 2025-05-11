@@ -15,15 +15,24 @@ impl MainMemory {
 }
 
 impl MemLevelAccess for MainMemory {
-    fn write_line(&mut self, addr: usize, words_per_lines: usize, data: Vec<u8>) {
-        // for i in 
+    fn write_line(&mut self, base_addr: usize, words_per_lines: usize, data: Vec<u8>) {
+        let last_addr = base_addr + (words_per_lines * WORDSIZE); 
+        for i in base_addr..last_addr {
+            self.data[i] = data[i];
+        }
     }
 
-    fn fetch_line(&self, addr: usize, words_per_lines: usize) -> Vec<u8> {
-        vec![0; words_per_lines * WORDSIZE]
+    fn fetch_line(&self, base_addr: usize, words_per_lines: usize) -> Vec<u8> {
+        let n_bytes: usize = words_per_lines * WORDSIZE; 
+        let mut ret_vec: Vec<u8> = vec![0; n_bytes];
+        for i in 0..n_bytes {
+            ret_vec[i] = self.data[base_addr + n_bytes].clone(); 
+        }
+        ret_vec
     }
 }
 
+// TODO: I dont think this is needed anymore
 impl MemoryAccess for MainMemory {
     fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
         if addr >= self.size {

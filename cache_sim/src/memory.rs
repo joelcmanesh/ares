@@ -3,9 +3,11 @@ use crate::main_memory::*;
 use crate::cache::*;
 use crate::direct_mapped_cache::*;
 
-const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
+use std::mem;
 
-#[derive(Debug)]
+// const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
+
+#[derive(Debug, Clone)]
 pub enum DataType {
     Byte(u8),
     Halfword(u16),
@@ -13,13 +15,23 @@ pub enum DataType {
     DoubleWord(u64),
 }
 
+impl DataType {
+    pub fn payload_size(&self) -> usize {
+        match self {
+            DataType::Byte(_)       => mem::size_of::<u8>(),
+            DataType::Halfword(_)   => mem::size_of::<u16>(),
+            DataType::Word(_)       => mem::size_of::<u32>(),
+            DataType::DoubleWord(_) => mem::size_of::<u64>(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum MemoryError {
     OutOfBounds,
     NotAligned,
     NotFound,
-    NotCompatible,
+    NotCompatible, 
 }
 
 pub trait MemoryAccess {
@@ -32,6 +44,7 @@ pub trait MemLevelAccess {
     fn fetch_line(&self, addr: usize, words_per_lines: usize) -> Vec<u8>;
 }
 
+#[warn(dead_code)]
 #[derive(Debug, Clone)]
 pub enum DataTypeSize {
     Byte,
@@ -58,6 +71,7 @@ impl DataTypeSize {
 #[derive(Debug)]
 pub struct Memory {
     size: usize,
+    stats: MemStats,
     main: MainMemory,
     l1: Cache,
 }
@@ -66,9 +80,22 @@ impl Memory {
     pub fn new(size: usize) -> Self {
         Memory {
             size, 
+            stats: MemStats::new(),
             main: MainMemory::new(size) , 
             l1: Cache::DirectMapped(DMCache::new(size / 4, 8))
         }
+    }
+
+    pub fn print_summary(&self) {
+        println!("Memory");
+        self.stats.print_summary();
+
+        println!("L1");
+        self.l1.print_summary();
+
+        // println!("Main");
+        // self.stats.print_summary();
+
     }
 }
 
@@ -83,31 +110,69 @@ impl MemoryAccess for Memory {
             return Err(MemoryError::NotAligned);
         }
 
-        match self.l1.read(addr, size) {
+        match self.l1.read(addr, size.clone()) {
             Ok(data) => {
+                self.stats.record_hit();
                 Ok(data)
             }
-
-            // refill line
+            
             Err(MemoryError::NotFound) => {
+                let w_p_l = self.l1.get_words_p_line();
+                
+                self.stats.record_miss();
                 if self.l1.is_line_dirty(addr) {
                     // write back line
-                    let base_addr = 0;
+                    
+                    let base_addr = self.l1.get_tag(addr) << (w_p_l + 2);
+                    
                     let write_back_line = self.l1.get_evict_line(addr);
-                    self.main.write_line(base_addr, self.l1.get_words_p_line(), write_back_line);
+                    self.main.write_line(base_addr, w_p_l, write_back_line);
                 }
-                // let line = self.main.fetch_line(addr, self.l1.words_per_line)?;  
-                // let _ = self.l1.write(data.clone(), addr)?;
-                Err(MemoryError::NotCompatible)
+
+                let new_line = self.main.fetch_line(addr, w_p_l);
+                self.l1.write_line(addr, w_p_l, new_line);
+                self.l1.read(addr, size)
             }
 
-            // any other error just propagates
             Err(e) => Err(e),
         }
     }
 
     fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
-        self.main.write(data, addr)
+        if addr >= self.size {
+            return Err(MemoryError::OutOfBounds);
+        }
+
+        let align = data.payload_size();
+        if addr % align != 0 {
+            return Err(MemoryError::NotAligned);
+        }
+
+        match self.l1.write(data.clone(), addr) {
+            Ok(()) => {
+                self.stats.record_hit();
+                Ok(())
+            }
+            
+            Err(MemoryError::NotFound) => {
+                let w_p_l = self.l1.get_words_p_line();
+                self.stats.record_miss();
+                
+                if self.l1.is_line_dirty(addr) {
+                    // write back line
+                    let base_addr = self.l1.get_tag(addr) << (w_p_l + 2);
+                    
+                    let write_back_line = self.l1.get_evict_line(addr);
+                    self.main.write_line(base_addr, w_p_l, write_back_line);
+                }
+
+                let new_line = self.main.fetch_line(addr, w_p_l);
+                self.l1.write_line(addr, w_p_l, new_line);
+                self.l1.write(data, addr)
+            }
+
+            Err(e) => Err(e),
+        }
     }
 }
 

@@ -3,6 +3,7 @@ use crate::direct_mapped_cache::*;
 
 const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
 
+#[warn(dead_code)]
 #[derive(Debug)]
 pub enum EvictionPolicy {
     LRU,
@@ -13,6 +14,16 @@ pub enum Cache {
     DirectMapped(DMCache),
     // SetAssociative(SetAssocCache),
     // FullyAssociative(FAssocCache),
+}
+
+impl Cache {
+    pub fn print_summary(&self) {
+        match self {
+            Cache::DirectMapped(dm) => dm.print_summary(),
+            // Cache::SetAssociative(sa) => sa.print_summary(),
+            // Cache::FullyAssociative(fa) => fa.print_summary(),
+        }
+    }
 }
 
 pub trait CacheAddressing {

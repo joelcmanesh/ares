@@ -43,5 +43,7 @@ fn main() -> Result<()> {
         }
     }
 
+    mem.print_summary();
+
     Ok(())
 }

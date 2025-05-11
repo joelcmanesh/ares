@@ -2,7 +2,6 @@
 pub struct MemStats {
     hits: usize,
     misses: usize,
-    evictions: usize,
 }
 
 impl MemStats {
@@ -10,7 +9,6 @@ impl MemStats {
         MemStats {
             hits: 0,
             misses: 0,
-            evictions: 0,
         }
     }
 
@@ -22,9 +20,6 @@ impl MemStats {
         self.misses += 1;
     }
 
-    pub fn record_evict(&mut self) {
-        self.evictions += 1;
-    }
 
     pub fn total_accesses(&self) -> usize {
         self.hits + self.misses
@@ -46,7 +41,6 @@ impl MemStats {
     pub fn print_summary(&self) {
         println!("Hits: {}", self.hits);
         println!("Misses: {}", self.misses);
-        println!("Evictions: {}", self.evictions);
         println!("Hit Rate: {:.2}%", self.hit_rate() * 100.0);
         println!("Miss Rate: {:.2}%", self.miss_rate() * 100.0);
     }

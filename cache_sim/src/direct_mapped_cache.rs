@@ -53,6 +53,10 @@ impl DMCache {
             tag_shift,
         }
     }
+
+    pub fn print_summary(&self) {
+        self.stats.print_summary();
+    }
 }
 
 impl MemoryAccess for DMCache {
