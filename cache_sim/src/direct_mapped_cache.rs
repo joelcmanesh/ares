@@ -184,49 +184,69 @@ impl MemLevelAccess for DMCache {
 }
 
 impl CacheAddressing for DMCache {
+    #[inline(always)]
     fn get_tag(&self, addr: usize) -> usize {
         addr >> self.tag_shift
     }
 
+    #[inline(always)]
     fn get_index(&self, addr: usize) -> usize {
         (addr & self.index_mask) >> self.index_shift
     }
 
+    #[inline(always)]
     fn get_word_offset(&self, addr: usize) -> usize {
         (addr & self.word_mask) >> self.word_shift
     }
 
+    #[inline(always)]
     fn get_byte_offset(&self, addr: usize) -> usize {
         addr & 0x3
     }
 
+    #[inline(always)]
     fn is_line_dirty(&self, addr: usize) -> bool {
         let ind = self.get_index(addr);
         self.lines[ind].is_dirty()
     }
 
+    #[inline(always)]
     fn get_evict_line(&self, addr:usize) -> Vec<u8> {
         let ind = self.get_index(addr);
         let line = self.lines[ind].clone();
         line.get_data()
     }
 
+    #[inline(always)]
     fn get_words_p_line(&self) -> usize {
         self.words_per_line
     }
-
+    
+    #[inline(always)]
     fn get_tag_shift(&self) -> usize {
         self.tag_shift
     }
 
+    #[inline(always)]
     fn get_writeback_addr(&self, addr: usize) -> usize {
         let ind = self.get_index(addr);
         let tag = self.lines[ind].tag();
         (tag << self.tag_shift) + (ind << self.index_shift) 
     }
 
+    #[inline(always)]
     fn get_base_addr(&self, addr: usize) -> usize {
         (self.get_tag(addr) << self.tag_shift) + (self.get_index(addr) << self.index_shift)
+    }
+
+    #[inline(always)]
+    fn index_bits(&self) -> usize {
+        self.lines.len().trailing_zeros() as usize
+    }
+
+    #[inline(always)]
+    fn word_bits(&self) -> usize {
+        self.words_per_line.trailing_zeros() as usize
     }
 }
 

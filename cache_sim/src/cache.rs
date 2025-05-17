@@ -1,5 +1,6 @@
 use crate::memory::*;
 use crate::direct_mapped_cache::*;
+use crate::set_associative::*;
 
 const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
 
@@ -38,6 +39,12 @@ pub trait CacheAddressing {
     fn get_tag_shift(&self) -> usize;
     fn get_writeback_addr(&self, addr: usize) -> usize;
     fn get_base_addr(&self, addr: usize) -> usize;
+
+    #[inline(always)]
+    fn byte_bits() -> usize { WORDSIZE.trailing_zeros() as usize }
+    fn word_bits(&self) -> usize;
+    fn index_bits(&self) -> usize;
+
 }
 
 impl MemoryAccess for Cache {
@@ -136,6 +143,22 @@ impl CacheAddressing for Cache {
             Cache::DirectMapped(dm) => dm.get_base_addr(addr),
             // Cache::SetAssociative(sa)    => sa.get_base_addr(addr),
             // Cache::FullyAssociative(fa)  => fa.get_base_addr(addr),
+        } 
+    }
+
+    fn index_bits(&self) -> usize {
+        match self {
+            Cache::DirectMapped(dm) => dm.index_bits(),
+            // Cache::SetAssociative(sa)    => sa.index_bits(),
+            // Cache::FullyAssociative(fa)  => fa.index_bits(),
+        }
+    }
+
+    fn word_bits(&self) -> usize {
+        match self {
+            Cache::DirectMapped(dm) => dm.word_bits(),
+            // Cache::SetAssociative(sa)    => sa.word_bits(),
+            // Cache::FullyAssociative(fa)  => fa.word_bits(),
         } 
     }
 }

@@ -2,18 +2,24 @@ use crate::mem_stats::*;
 use crate::main_memory::*;
 use crate::cache::*;
 use crate::direct_mapped_cache::*;
+use crate::set_associative::*;
 
 use std::mem;
 
 const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataType {
     Byte(u8),
     Halfword(u16),
     Word(u32),
     DoubleWord(u64),
 }
+
+impl From<u8>  for DataType { fn from(v: u8)  -> Self { DataType::Byte(v) } }
+impl From<u16> for DataType { fn from(v: u16) -> Self { DataType::Halfword(v) } }
+impl From<u32> for DataType { fn from(v: u32) -> Self { DataType::Word(v) } }
+impl From<u64> for DataType { fn from(v: u64) -> Self { DataType::DoubleWord(v) } }
 
 impl DataType {
     pub fn payload_size(&self) -> usize {
