@@ -8,7 +8,7 @@ pub const ADDR_BITS: usize = 32;
 #[derive(Debug)]
 pub struct DMCache {
     words_per_line: usize,
-    stats: MemStats,
+    pub stats: MemStats,
     lines: Vec<CacheLine>,
     index_mask: usize,
     word_mask: usize,
@@ -40,6 +40,9 @@ impl DMCache {
 
         let tag_shift = offset_bits + index_bits;
 
+        println!("Tag shift {:x}, index shift {:x}, word shift {:x}", 
+            tag_shift, index_shift, word_shift);
+
         DMCache {
             words_per_line,
             lines: (0..num_lines)
@@ -56,6 +59,10 @@ impl DMCache {
 
     pub fn print_summary(&self) {
         self.stats.print_summary();
+    }
+
+    pub fn get_lines(&self) -> usize {
+        self.lines.len()
     }
 }
 
@@ -207,6 +214,20 @@ impl CacheAddressing for DMCache {
     fn get_words_p_line(&self) -> usize {
         self.words_per_line
     }
+
+    fn get_tag_shift(&self) -> usize {
+        self.tag_shift
+    }
+
+    fn get_writeback_addr(&self, addr: usize) -> usize {
+        let ind = self.get_index(addr);
+        let tag = self.lines[ind].tag();
+        (tag << self.tag_shift) + (ind << self.index_shift) 
+    }
+
+    fn get_base_addr(&self, addr: usize) -> usize {
+        (self.get_tag(addr) << self.tag_shift) + (self.get_index(addr) << self.index_shift)
+    }
 }
 
 #[cfg(test)]
@@ -232,6 +253,8 @@ mod tests {
         assert_eq!(index, 0x1c);
         assert_eq!(word_offset, 0x1);
         assert_eq!(byte_offset, 0x1);
+
+        assert_eq!(c.stats.total_accesses(), 0);
     }
 
     #[test]
@@ -247,6 +270,8 @@ mod tests {
             "expected Err(NotFound), got: {:?}",
             result
         );
+
+        assert_eq!(c.stats.total_accesses(), 1);
     }
 
     #[test]
@@ -274,11 +299,16 @@ mod tests {
             _ => panic!("Incorrect Read")
         }
         
-        let _ = c.write(DataType::DoubleWord(0x11cafebabe), addr);
+        let _ = c.write(DataType::DoubleWord(0x87654321cafebabe), addr);
         match c.read(addr, DataTypeSize::DoubleWord) {
-            Ok(DataType::DoubleWord(d)) => assert_eq!(d, 0x11cafebabe),
+            Ok(DataType::DoubleWord(d)) => assert_eq!(d, 0x87654321cafebabe),
             _ => panic!("Incorrect Read")
         }
+
+        assert_eq!(c.stats.total_accesses(), 8);
+        assert_eq!(c.stats.hit_rate(), (8 / 8) as f64);
+        assert_eq!(c.stats.miss_rate(), (0 / 8) as f64);
+
     }
 
     #[test]
@@ -307,21 +337,45 @@ mod tests {
             Ok(DataType::DoubleWord(d)) => assert_eq!(d, 0xa5a5a5a5a5a5a5a5),
             _ => panic!("Incorrect Read")
         }
+
+        assert_eq!(c.stats.total_accesses(), 4);
+        assert_eq!(c.stats.hit_rate(), (4 / 4) as f64);
+        assert_eq!(c.stats.miss_rate(), (0 / 4) as f64);
+    }
+
+    #[test]
+    fn write_read_cache_line () {
+        let size: usize = 1 << 16;
+        let words_p_line = 8;
+
+        let mut c = DMCache::new(size, words_p_line);
+        
+        for i in 0..words_p_line {
+            let i = i * WORDSIZE;
+            let _ = c.read(i, DataTypeSize::Word);
+        }
+
+        c.stats.print_summary();
+
+        assert_eq!(c.stats.total_accesses(), words_p_line);
+        assert_eq!(c.stats.miss_rate(), 1.0);
     }
 
     #[test]
     fn write_read_whole_cache () {
         let size: usize = 1 << 6;
         let words_p_line = 4;
-        let vec: Vec<u8> = (0..size).map (|i| i as u8).collect();
+        let vec: Vec<u8> = (0..size).map(|i| i as u8).collect();
 
         let mut c = DMCache::new(size, words_p_line);
-        for i in 0..vec.len() {
+
+            for i in 0..vec.len() {
             if i % (words_p_line * WORDSIZE) == 0 {
                 let slice: Vec<u8> = (i..i+words_p_line*WORDSIZE).map(|j| vec[j]).collect();
                 c.write_line(i, words_p_line, slice);
             }
         }
+
         for i in 0..vec.len() {
             match c.read(i, DataTypeSize::Byte) {
                 Ok(DataType::Byte(d)) => assert_eq!(d, vec[i]),
@@ -330,5 +384,9 @@ mod tests {
         }
 
         c.stats.print_summary();
+
+        assert_eq!(c.stats.total_accesses(), size);
+        assert_eq!(c.stats.hit_rate(), 1.0);
+        assert_eq!(c.stats.miss_rate(), 0.0);
     }
 }

@@ -7,6 +7,7 @@ const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
 #[derive(Debug)]
 pub enum EvictionPolicy {
     LRU,
+    RANDOM
 }
 
 #[derive(Debug)]
@@ -34,6 +35,9 @@ pub trait CacheAddressing {
     fn is_line_dirty(&self, addr: usize) -> bool;
     fn get_evict_line(&self, addr:usize) -> Vec<u8>;
     fn get_words_p_line(&self) -> usize;
+    fn get_tag_shift(&self) -> usize;
+    fn get_writeback_addr(&self, addr: usize) -> usize;
+    fn get_base_addr(&self, addr: usize) -> usize;
 }
 
 impl MemoryAccess for Cache {
@@ -109,6 +113,30 @@ impl CacheAddressing for Cache {
             // Cache::SetAssociative(sa)    => sa.get_words_p_line(),
             // Cache::FullyAssociative(fa)  => fa.get_words_p_line(),
         }
+    }
+
+    fn get_tag_shift(&self) -> usize {
+        match self {
+            Cache::DirectMapped(dm) => dm.get_tag_shift(),
+            // Cache::SetAssociative(sa)    => sa.get_tag_shift(),
+            // Cache::FullyAssociative(fa)  => fa.get_tag_shift(),
+        }
+    }
+
+    fn get_writeback_addr(&self, addr: usize) -> usize {
+        match self {
+            Cache::DirectMapped(dm) => dm.get_writeback_addr(addr),
+            // Cache::SetAssociative(sa)    => sa.get_writeback_addr(addr),
+            // Cache::FullyAssociative(fa)  => fa.get_writeback_addr(addr),
+        } 
+    }
+
+    fn get_base_addr(&self, addr: usize) -> usize {
+        match self {
+            Cache::DirectMapped(dm) => dm.get_base_addr(addr),
+            // Cache::SetAssociative(sa)    => sa.get_base_addr(addr),
+            // Cache::FullyAssociative(fa)  => fa.get_base_addr(addr),
+        } 
     }
 }
 

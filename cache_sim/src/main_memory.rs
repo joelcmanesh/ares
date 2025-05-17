@@ -16,23 +16,30 @@ impl MainMemory {
 
 impl MemLevelAccess for MainMemory {
     fn write_line(&mut self, base_addr: usize, words_per_lines: usize, data: Vec<u8>) {
-        let last_addr = base_addr + (words_per_lines * WORDSIZE); 
-        for i in base_addr..last_addr {
-            self.data[i] = data[i];
+        // let last_addr = base_addr + (words_per_lines * WORDSIZE); 
+        // for i in base_addr..last_addr {
+            // self.data[i] = data[i];
+        // }
+
+        let n_bytes: usize = words_per_lines * WORDSIZE; 
+        for i in 0..n_bytes {
+            self.data[base_addr + i] = data[i];
         }
+
+        // println!("data writing back {:#?}", data); // TODO: delete
     }
 
     fn fetch_line(&self, base_addr: usize, words_per_lines: usize) -> Vec<u8> {
         let n_bytes: usize = words_per_lines * WORDSIZE; 
         let mut ret_vec: Vec<u8> = vec![0; n_bytes];
         for i in 0..n_bytes {
-            ret_vec[i] = self.data[base_addr + n_bytes].clone(); 
+            ret_vec[i] = self.data[base_addr + i].clone(); 
         }
+        // println!("[MAIN MEMORY] fetching line {:#?} ", ret_vec);
         ret_vec
     }
 }
 
-// TODO: I dont think this is needed anymore
 impl MemoryAccess for MainMemory {
     fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
         if addr >= self.size {
@@ -41,7 +48,9 @@ impl MemoryAccess for MainMemory {
 
         match size {
             DataTypeSize::Byte => {
-                Ok(DataType::Byte(self.data[addr]))
+                let byte = self.data[addr];
+                println!("[MAIN MEMORY] reading {} at {:x}", byte, addr);
+                Ok(DataType::Byte(byte))
             }
 
             DataTypeSize::Halfword => {
@@ -71,6 +80,8 @@ impl MemoryAccess for MainMemory {
                     self.data[addr + 2],
                     self.data[addr + 3],
                 ]);
+
+                println!("[MAIN MEMORY] reading {} at {:x}", val, addr);
                 Ok(DataType::Word(val))
             }
 
@@ -103,6 +114,8 @@ impl MemoryAccess for MainMemory {
 
         match data {
             DataType::Byte(val) => {
+                println!("[MAIN MEMORY] write {} at {:x}", val, addr);
+
                 self.data[addr] = val;
                 Ok(())
             }
@@ -132,6 +145,13 @@ impl MemoryAccess for MainMemory {
                 for i in 0..4 {
                     self.data[addr + i] = bytes[i];
                 }
+
+                let mut dut_bytes = [0 as u8; WORDSIZE];
+                for i in 0..4 {
+                    dut_bytes[i] = self.data[addr + i];
+                }
+
+                println!("[MAIN MEMORY] write {:#?} at {:x}", dut_bytes, addr);
                 Ok(())
             }
 

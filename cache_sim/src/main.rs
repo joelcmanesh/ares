@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     let f = File::open(MEM_FILE)?;
     let reader = BufReader::new(f);
     
-    let mut mem = Memory::new(1 << 12);
+    let mut mem = Memory::new(1 << 12, 1 << 10, 8);
 
     let lines = reader.lines();
     for line in lines {
@@ -29,16 +29,16 @@ fn main() -> Result<()> {
             print!("op {} @ {:x}\t", op, addr);
             match op {
                 'r' => {
-                let val = mem.read(addr, DataTypeSize::Word).unwrap();
-                println!("read @ {} -> {:?}", addr, val);
-            }
-            'w' => {
-                // example: args = ["w", "16", "42"]
-                let val = args[2].parse::<u8>().unwrap();
-                mem.write(DataType::Byte(val), addr).unwrap();
-                println!("write {} @ {}", val, addr);
-            }
-            _ => continue,
+                    let val = mem.read(addr, DataTypeSize::Word).unwrap();
+                    println!("read @ {} -> {:?}", addr, val);
+                }
+                'w' => {
+                    // example: args = ["w", "16", "42"]
+                    let val = args[2].parse::<u8>().unwrap();
+                    mem.write(DataType::Byte(val), addr).unwrap();
+                    println!("write {} @ {}", val, addr);
+                }
+                _ => continue,
             }
         }
     }
