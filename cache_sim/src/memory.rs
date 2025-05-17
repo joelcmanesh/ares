@@ -180,7 +180,7 @@ impl<
             return Err(MemoryError::NotAligned);
         }
 
-        match self.l1.write(data.clone(), addr) {
+        match self.l1.write(data, addr) {
             Ok(()) => {
                 self.stats.record_hit();
                 Ok(())

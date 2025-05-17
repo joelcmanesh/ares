@@ -19,17 +19,22 @@ impl<const BYTES: usize> MainMemory<BYTES> {
 impl<const BYTES: usize> MemLevelAccess for MainMemory<BYTES> {
     fn write_line(&mut self, base_addr: usize, words_per_lines: usize, data: Vec<u8>) {
         let n_bytes: usize = words_per_lines * WORDSIZE; 
-        for i in 0..n_bytes {
-            self.data[base_addr + i] = data[i];
-        }
+        // for i in 0..n_bytes {
+        //     self.data[base_addr + i] = data[i];
+            
+        // }
+        self.data[base_addr..(n_bytes + base_addr)].copy_from_slice(&data[..n_bytes]);
     }
 
     fn fetch_line(&self, base_addr: usize, words_per_lines: usize) -> Vec<u8> {
         let n_bytes: usize = words_per_lines * WORDSIZE; 
         let mut ret_vec: Vec<u8> = vec![0; n_bytes];
-        for i in 0..n_bytes {
-            ret_vec[i] = self.data[base_addr + i].clone(); 
-        }
+        // for i in 0..n_bytes {
+        //     ret_vec[i] = self.data[base_addr + i].clone(); 
+        // }
+        // self.data[base_addr..(n_bytes + base_addr)].copy_from_slice(&data[..n_bytes]);
+    
+        ret_vec[..n_bytes].copy_from_slice(&self.data[base_addr..(n_bytes + base_addr)]);
         ret_vec
     }
 }
@@ -43,7 +48,7 @@ impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
         match size {
             DataTypeSize::Byte => {
                 let byte = self.data[addr];
-                println!("[MAIN MEMORY] reading {} at {:x}", byte, addr);
+                // println!("[MAIN MEMORY] reading {} at {:x}", byte, addr);
                 Ok(DataType::Byte(byte))
             }
 
@@ -75,7 +80,7 @@ impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
                     self.data[addr + 3],
                 ]);
 
-                println!("[MAIN MEMORY] reading {} at {:x}", val, addr);
+                // println!("[MAIN MEMORY] reading {} at {:x}", val, addr);
                 Ok(DataType::Word(val))
             }
 
@@ -108,8 +113,6 @@ impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
 
         match data {
             DataType::Byte(val) => {
-                // println!("[MAIN MEMORY] write {} at {:x}", val, addr);
-
                 self.data[addr] = val;
                 Ok(())
             }
@@ -121,10 +124,11 @@ impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
                 if addr + 3 >= BYTES {
                     return Err(MemoryError::OutOfBounds);
                 }
+
                 let bytes = val.to_le_bytes();
-                for i in 0..2 {
-                    self.data[addr + i] = bytes[i];
-                }
+                self.data[addr..(DataTypeSize::get_size(DataTypeSize::Halfword) + addr)]
+                    .copy_from_slice(&bytes);
+
                 Ok(())
             }
 
@@ -135,17 +139,11 @@ impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
                 if addr + 3 >= BYTES {
                     return Err(MemoryError::OutOfBounds);
                 }
+                
                 let bytes = val.to_le_bytes();
-                for i in 0..4 {
-                    self.data[addr + i] = bytes[i];
-                }
+                self.data[addr..(DataTypeSize::get_size(DataTypeSize::Word) + addr)]
+                    .copy_from_slice(&bytes);
 
-                let mut dut_bytes = [0 as u8; WORDSIZE];
-                for i in 0..4 {
-                    dut_bytes[i] = self.data[addr + i];
-                }
-
-                // println!("[MAIN MEMORY] write {:#?} at {:x}", dut_bytes, addr);
                 Ok(())
             }
 
@@ -156,10 +154,11 @@ impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
                 if addr + 3 >= BYTES {
                     return Err(MemoryError::OutOfBounds);
                 }
+                
                 let bytes = val.to_le_bytes();
-                for i in 0..8 {
-                    self.data[addr + i] = bytes[i];
-                }
+                self.data[addr..(DataTypeSize::get_size(DataTypeSize::DoubleWord) + addr)]
+                    .copy_from_slice(&bytes);
+
                 Ok(())
             }
         }

@@ -120,7 +120,7 @@ impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
 
             DataType::Halfword(val) => {
                 let bytes = val.to_le_bytes();
-                for i in 0..2 {
+                for (i, _) in bytes.iter().enumerate() {
                     line.write_byte(byte_index + i, bytes[i]);
                 }
                 Ok(())
@@ -130,7 +130,7 @@ impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
             DataType::Word(val) => {
 
                 let bytes = val.to_le_bytes();
-                for i in 0..4 {
+                for (i, _) in bytes.iter().enumerate() {
                     line.write_byte(byte_index + i, bytes[i]);
                 }
                 Ok(())
@@ -138,7 +138,7 @@ impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
 
             DataType::DoubleWord(val) => {
                 let bytes = val.to_le_bytes();
-                for i in 0..8 {
+                for (i, _) in bytes.iter().enumerate() {
                     line.write_byte(byte_index + i, bytes[i]);
                 }
                 Ok(())
