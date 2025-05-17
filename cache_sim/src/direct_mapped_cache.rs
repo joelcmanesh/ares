@@ -1,3 +1,5 @@
+use core::num;
+
 use crate::mem_stats::*;
 use crate::memory::*;
 use crate::cache::*;
@@ -6,70 +8,38 @@ const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
 pub const ADDR_BITS: usize = 32;
 
 #[derive(Debug)]
-pub struct DMCache {
-    words_per_line: usize,
-    pub stats: MemStats,
+pub struct DMCache<
+    const BYTES: usize,               
+    const WORDS_PER_LINE: usize,      
+    > {
     lines: Vec<CacheLine>,
-    index_mask: usize,
-    word_mask: usize,
-    index_shift: usize,
-    word_shift: usize,
-    tag_shift: usize,
+    stats: MemStats,
 }
 
-impl DMCache {
-    pub fn new(size: usize, words_per_line: usize) -> Self {
-        assert!(size <= 1 << ADDR_BITS, "MAX ADDR is 0xFFFF_FFFF");
+
+impl<const BYTES: usize, const WORDS_PER_LINE: usize> DMCache<BYTES, WORDS_PER_LINE> {
+    pub const NUM_LINES: usize = BYTES / (WORDSIZE * WORDS_PER_LINE);
+
+    pub fn new() -> Self {
+        assert!(BYTES.is_power_of_two(), "BYTES must be a power of two");
+        assert!(WORDS_PER_LINE.is_power_of_two(), "WORDS_PER_LINE must be a power of two");
+        assert!(Self::NUM_LINES > 0, "cache must hold ≥ 1 line");
+        assert!(Self::NUM_LINES.is_power_of_two(),"NUM_LINES must be a power of two");
+
+        let lines = vec![CacheLine::new(WORDS_PER_LINE); Self::NUM_LINES];
         
-        let num_lines = (size / WORDSIZE) / words_per_line;
-        assert!(
-            num_lines.is_power_of_two() && words_per_line.is_power_of_two(),
-            "cache_size/(words_per_line*WORDSIZE) and words_per_line must both be powers of two"
-        );
-        let byte_bits = WORDSIZE.trailing_zeros() as usize;
-        let word_bits = words_per_line.trailing_zeros() as usize;
-        let index_bits = num_lines.trailing_zeros() as usize;
-        
-        let offset_bits = byte_bits + word_bits;
-
-        let word_mask = (1 << offset_bits) - 1;
-        let word_shift = byte_bits;
-
-        let index_mask = (1 << index_bits + offset_bits) - 1;
-        let index_shift = offset_bits;
-
-        let tag_shift = offset_bits + index_bits;
-
-        println!("Tag shift {:x}, index shift {:x}, word shift {:x}", 
-            tag_shift, index_shift, word_shift);
-
-        DMCache {
-            words_per_line,
-            lines: (0..num_lines)
-                .map(|_| CacheLine::new(words_per_line))
-                .collect(),
-            stats: MemStats::new(),
-            index_mask,
-            index_shift,
-            word_mask, 
-            word_shift,
-            tag_shift,
-        }
+        Self { lines, stats: MemStats::new() }
     }
 
     pub fn print_summary(&self) {
         self.stats.print_summary();
     }
-
-    pub fn get_lines(&self) -> usize {
-        self.lines.len()
-    }
 }
 
-impl MemoryAccess for DMCache {
+impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
     fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
-        let ind = self.get_index(addr);
-        
+        let (_, ind, word, byte) = self.decode_addr(addr);
+
         let line: &CacheLine = &self.lines[ind];
 
         if !line.is_valid() || line.tag() != self.get_tag(addr) {
@@ -78,7 +48,9 @@ impl MemoryAccess for DMCache {
         }
         
         self.stats.record_hit();
-        let byte_index = WORDSIZE * self.get_word_offset(addr) + self.get_byte_offset(addr);
+        
+        let byte_index = WORDSIZE * word + byte;
+
         match size {
             DataTypeSize::Byte => {
                 let byte = line.read_byte(byte_index);
@@ -123,18 +95,24 @@ impl MemoryAccess for DMCache {
         }
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
-        let idx = self.get_index(addr);
-        let byte_index = WORDSIZE * self.get_word_offset(addr) + self.get_byte_offset(addr);
+    fn stats(&self) -> &MemStats {
+        &self.stats
+    }
 
-        let line: &CacheLine = &self.lines[idx];
+    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+        let (_, ind, word, byte) = self.decode_addr(addr);
+        
+        let byte_index = WORDSIZE * word + byte;
+
+        let line: &CacheLine = &self.lines[ind];
         if !line.is_valid() || line.tag() != self.get_tag(addr) {
             self.stats.record_miss();
             return Err(MemoryError::NotFound);
         }
         
-        let line: &mut CacheLine = &mut self.lines[idx];
         self.stats.record_hit();
+        
+        let line: &mut CacheLine = &mut self.lines[ind];
         match data {
             DataType::Byte(val) => {
                 line.write_byte(byte_index, val);
@@ -168,40 +146,71 @@ impl MemoryAccess for DMCache {
             }
         }
     }
+
 }
 
-impl MemLevelAccess for DMCache {
+impl<const B: usize, const W: usize> MemLevelAccess for DMCache<B, W> {
     fn write_line(&mut self, addr: usize, _words_per_lines: usize, data: Vec<u8>) {
-        let ind = self.get_index(addr);
-        let tag = self.get_tag(addr);
+        let (tag, ind, _, _) = self.decode_addr(addr);
         let line: &mut CacheLine = &mut self.lines[ind];
         line.write_line(tag, data);
     }
 
     fn fetch_line(&self, addr: usize, _words_per_lines: usize) -> Vec<u8> {
-        self.get_evict_line(addr)
+        self.get_evict_line_data(addr)
     }
 }
 
-impl CacheAddressing for DMCache {
+impl<const BYTES: usize,const WORDS_PER_LINE: usize,> CacheAddressing for DMCache<BYTES, WORDS_PER_LINE> {
+    #[inline(always)]
+    fn byte_bits(&self) -> usize {
+        WORDSIZE.trailing_zeros() as usize
+    }
+    
+    #[inline(always)]
+    fn word_bits(&self) -> usize {
+        WORDS_PER_LINE.trailing_zeros() as usize
+    }
+
+    #[inline(always)]
+    fn index_bits(&self) -> usize {
+        self.lines.len().trailing_zeros() as usize
+    }
+
+    fn decode_addr(&self, addr: usize) -> (usize, usize, usize, usize) {
+        let bb = self.byte_bits(); // lowest bits
+        let wb = self.word_bits(); // next bits
+        let ib = self.index_bits(); // next bits
+
+        let byte  =  addr & ((1 << bb) - 1);
+        let word  = (addr >>  bb) & ((1 << wb) - 1);
+        let index = (addr >> (bb + wb)) & ((1 << ib) - 1);
+        let tag   =  addr >> (bb + wb + ib);
+        (tag, index, word, byte)
+    }
+    
     #[inline(always)]
     fn get_tag(&self, addr: usize) -> usize {
-        addr >> self.tag_shift
+        let (tag, ..) = self.decode_addr(addr); 
+        tag
     }
 
     #[inline(always)]
     fn get_index(&self, addr: usize) -> usize {
-        (addr & self.index_mask) >> self.index_shift
+        let (_, ind, ..) = self.decode_addr(addr); 
+        ind
     }
 
     #[inline(always)]
     fn get_word_offset(&self, addr: usize) -> usize {
-        (addr & self.word_mask) >> self.word_shift
+        let (_, _, word, ..) = self.decode_addr(addr); 
+        word
     }
 
     #[inline(always)]
     fn get_byte_offset(&self, addr: usize) -> usize {
-        addr & 0x3
+        let (_, _, _, byte) = self.decode_addr(addr); 
+        byte
     }
 
     #[inline(always)]
@@ -211,43 +220,29 @@ impl CacheAddressing for DMCache {
     }
 
     #[inline(always)]
-    fn get_evict_line(&self, addr:usize) -> Vec<u8> {
+    fn get_evict_line_data(&self, addr:usize) -> Vec<u8> {
         let ind = self.get_index(addr);
-        let line = self.lines[ind].clone();
-        line.get_data()
+        self.lines[ind].get_data()
     }
-
-    #[inline(always)]
-    fn get_words_p_line(&self) -> usize {
-        self.words_per_line
-    }
-    
-    #[inline(always)]
-    fn get_tag_shift(&self) -> usize {
-        self.tag_shift
-    }
-
     #[inline(always)]
     fn get_writeback_addr(&self, addr: usize) -> usize {
         let ind = self.get_index(addr);
-        let tag = self.lines[ind].tag();
-        (tag << self.tag_shift) + (ind << self.index_shift) 
+        let tag = self.lines[ind].tag();          // tag currently stored in cache
+        let bb = self.byte_bits();
+        let wb = self.word_bits();
+        let ib = self.index_bits();
+        (tag << (ib + wb + bb)) | (ind << (wb + bb))
     }
 
     #[inline(always)]
     fn get_base_addr(&self, addr: usize) -> usize {
-        (self.get_tag(addr) << self.tag_shift) + (self.get_index(addr) << self.index_shift)
+        let (tag, ind, _, _) = self.decode_addr(addr);
+        let bb = self.byte_bits();
+        let wb = self.word_bits();
+        let ib = self.index_bits();
+        (tag << (ib + wb + bb)) | (ind << (wb + bb)) 
     }
 
-    #[inline(always)]
-    fn index_bits(&self) -> usize {
-        self.lines.len().trailing_zeros() as usize
-    }
-
-    #[inline(always)]
-    fn word_bits(&self) -> usize {
-        self.words_per_line.trailing_zeros() as usize
-    }
 }
 
 #[cfg(test)]
@@ -256,12 +251,15 @@ mod tests {
 
     #[test]
     fn new () {
-        let _ = DMCache::new(1 << 10, 8);
+        type L1 = DMCache<1024, 8>;           // Direct-mapped, 1 KiB, 32-B lines
+        let l1 = L1::new();
+        println!("{:#?}", l1);
     }
 
     #[test]
     fn parse_addr() {
-        let c = DMCache::new(1 << 12, 8);
+        type L1 = DMCache<1024, 8>;           // Direct-mapped, 1 KiB, 32-B lines
+        let c = L1::new();
 
         let addr = 0x385;
         let tag = c.get_tag(addr);
@@ -279,7 +277,10 @@ mod tests {
 
     #[test]
     fn compulsory_miss () {
-        let mut c = DMCache::new(1 << 12, 8);
+        const L1_SIZE: usize = 1 << 12;
+        const WORD_P_LINE: usize = 8;
+        type L1 = DMCache<L1_SIZE, WORD_P_LINE>;
+        let mut c = L1::new();
 
         let addr = 0x385;
 
@@ -296,7 +297,10 @@ mod tests {
 
     #[test]
     fn single_write () {
-        let mut c = DMCache::new(1 << 12, 8);
+        const L1_SIZE: usize = 1 << 12;
+        const WORD_P_LINE: usize = 8;
+        type L1 = DMCache<L1_SIZE, WORD_P_LINE>;
+        let mut c = L1::new();
 
         let addr = 0x385;
         c.write_line(addr, 8, vec![0xff; WORDSIZE * 8]);
@@ -333,7 +337,10 @@ mod tests {
 
     #[test]
     fn read () {
-        let mut c = DMCache::new(1 << 12, 8);
+        const L1_SIZE: usize = 1 << 12;
+        const WORD_P_LINE: usize = 8;
+        type L1 = DMCache<L1_SIZE, WORD_P_LINE>;
+        let mut c = L1::new();
 
         let addr = 0x385;
         c.write_line(addr, 8, vec![0xa5; WORDSIZE * 8]);
@@ -365,38 +372,42 @@ mod tests {
 
     #[test]
     fn write_read_cache_line () {
-        let size: usize = 1 << 16;
-        let words_p_line = 8;
+        const L1_SIZE: usize = 1 << 12;
+        const WORD_P_LINE: usize = 8;
+        type L1 = DMCache<L1_SIZE, WORD_P_LINE>;
+        let mut c = L1::new();
 
-        let mut c = DMCache::new(size, words_p_line);
-        
-        for i in 0..words_p_line {
+        for i in 0..WORD_P_LINE {
             let i = i * WORDSIZE;
             let _ = c.read(i, DataTypeSize::Word);
         }
 
         c.stats.print_summary();
 
-        assert_eq!(c.stats.total_accesses(), words_p_line);
+        assert_eq!(c.stats.total_accesses(), WORD_P_LINE);
         assert_eq!(c.stats.miss_rate(), 1.0);
     }
 
     #[test]
     fn write_read_whole_cache () {
-        let size: usize = 1 << 6;
-        let words_p_line = 4;
-        let vec: Vec<u8> = (0..size).map(|i| i as u8).collect();
+        const L1_SIZE: usize = 1 << 12;
+        const WORD_P_LINE: usize = 8;
+        type L1 = DMCache<L1_SIZE, WORD_P_LINE>;
+        let mut c = L1::new();
 
-        let mut c = DMCache::new(size, words_p_line);
+        let vec: Vec<u8> = (0..L1_SIZE).map(|i| i as u8).collect();
 
-            for i in 0..vec.len() {
-            if i % (words_p_line * WORDSIZE) == 0 {
-                let slice: Vec<u8> = (i..i+words_p_line*WORDSIZE).map(|j| vec[j]).collect();
-                c.write_line(i, words_p_line, slice);
+        // change to step
+        for i in 0..L1_SIZE {
+            if i % (WORD_P_LINE * WORDSIZE) == 0 {
+                let slice: Vec<u8> = (i..i+WORD_P_LINE*WORDSIZE)
+                    .map(|j| vec[j])
+                    .collect();
+                c.write_line(i, WORD_P_LINE, slice);
             }
         }
 
-        for i in 0..vec.len() {
+        for i in 0..L1_SIZE {
             match c.read(i, DataTypeSize::Byte) {
                 Ok(DataType::Byte(d)) => assert_eq!(d, vec[i]),
                 _ => panic!("Incorrect Read")
@@ -405,7 +416,7 @@ mod tests {
 
         c.stats.print_summary();
 
-        assert_eq!(c.stats.total_accesses(), size);
+        assert_eq!(c.stats.total_accesses(), L1_SIZE);
         assert_eq!(c.stats.hit_rate(), 1.0);
         assert_eq!(c.stats.miss_rate(), 0.0);
     }
