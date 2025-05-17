@@ -5,7 +5,7 @@ mod mem_stats;
 mod memory;
 mod main_memory;
 mod cache;
-mod direct_mapped_cache;
+mod direct_map;
 mod set_associative;
 
 use crate::memory::{Memory, DataTypeSize, DataType, MemoryAccess};
@@ -14,38 +14,42 @@ use crate::memory::{Memory, DataTypeSize, DataType, MemoryAccess};
 const MEM_FILE: &str = "mem_files/small_trace.txt";
 
 fn main() -> Result<()> {
-    println!("HELLO");
-    // let f = File::open(MEM_FILE)?;
-    // let reader = BufReader::new(f);
+    let f = File::open(MEM_FILE)?;
+    let reader = BufReader::new(f);
     
-    // let mut mem = Memory::new(1 << 12, 1 << 10, 8);
+    const MEM_SIZE: usize =  1 << 22; // 4 MiB
+    const L1_SIZE: usize =  1 << 14; // 16 KiB
+    const L1_WPL: usize = 8;
 
-    // let lines = reader.lines();
-    // for line in lines {
-    //     if let Ok(line) = line {
-    //         let args : Vec<&str> = line.split_ascii_whitespace().collect();
-    //         let op = args[0].chars().next().unwrap();
-            
-    //         let addr = usize::from_str_radix(args[1], 16).unwrap();
-            
-    //         print!("op {} @ {:x}\t", op, addr);
-    //         match op {
-    //             'r' => {
-    //                 let val = mem.read(addr, DataTypeSize::Word).unwrap();
-    //                 println!("read @ {} -> {:?}", addr, val);
-    //             }
-    //             'w' => {
-    //                 // example: args = ["w", "16", "42"]
-    //                 let val = args[2].parse::<u8>().unwrap();
-    //                 mem.write(DataType::Byte(val), addr).unwrap();
-    //                 println!("write {} @ {}", val, addr);
-    //             }
-    //             _ => continue,
-    //         }
-    //     }
-    // }
+    type N64Mem = Memory<MEM_SIZE, L1_SIZE, L1_WPL>;
+    let mut mem = N64Mem::new();
 
-    // mem.print_summary();
+    let lines = reader.lines();
+    for line in lines {
+        if let Ok(line) = line {
+            let args : Vec<&str> = line.split_ascii_whitespace().collect();
+            let op = args[0].chars().next().unwrap();
+            
+            let addr = usize::from_str_radix(args[1], 16).unwrap();
+            
+            print!("op {} @ {:x}\t", op, addr);
+            match op {
+                'r' => {
+                    let val = mem.read(addr, DataTypeSize::Word).unwrap();
+                    println!("read @ {} -> {:?}", addr, val);
+                }
+                'w' => {
+                    // example: args = ["w", "16", "42"]
+                    let val = args[2].parse::<u8>().unwrap();
+                    mem.write(DataType::Byte(val), addr).unwrap();
+                    println!("write {} @ {}", val, addr);
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    mem.print_summary();
 
     Ok(())
 }

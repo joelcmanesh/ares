@@ -1,7 +1,7 @@
 use crate::mem_stats::*;
 use crate::main_memory::*;
 use crate::cache::*;
-use crate::direct_mapped_cache::*;
+use crate::direct_map::*;
 // use crate::set_associative::*;
 
 use std::mem;
