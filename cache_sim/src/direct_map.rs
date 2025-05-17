@@ -1,4 +1,3 @@
-use core::num;
 
 use crate::mem_stats::*;
 use crate::memory::*;
