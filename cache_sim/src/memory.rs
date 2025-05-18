@@ -75,37 +75,74 @@ impl DataTypeSize {
     }
 }
 
+#[derive(Copy, Clone)]
+enum WhichL1 { Instr, Data }
+
 #[derive(Debug)]
 pub struct Memory<
     const FULL_BYTES: usize,
-    const L1_BYTES: usize,
-    const L1_WORDS_PER_LINE: usize,
-    const L1_ASSOC: usize = 1,
-> {
-    size: usize,                                     // total *main-memory* bytes
-    stats: MemStats,
-    l1: Cache<L1_BYTES, L1_WORDS_PER_LINE, L1_ASSOC>,// fixed-geometry cache
-    main: MainMemory<FULL_BYTES>,
-}
+    const IM_L1_BYTES: usize,
+    const IM_L1_WORDS_PER_LINE: usize,
+    const DM_L1_BYTES: usize,
+    const DM_L1_WORDS_PER_LINE: usize,
+    const IM_L1_ASSOC: usize = 1,
+    const DM_L1_ASSOC: usize = 1,
+    > {
+        size: usize,                                     
+        stats: MemStats,
+        im: Cache<IM_L1_BYTES, IM_L1_WORDS_PER_LINE, IM_L1_ASSOC>,
+        dm: Cache<DM_L1_BYTES, DM_L1_WORDS_PER_LINE, DM_L1_ASSOC>,
+        im_start_addr: usize,
+        dm_start_addr: usize,
+        main: MainMemory<FULL_BYTES>,
+    }
 
 impl<
     const FULL_BYTES: usize,
-    const L1_BYTES: usize,
-    const L1_WORDS_PER_LINE: usize,
-    const L1_ASSOC: usize,
-> Memory<FULL_BYTES, L1_BYTES, L1_WORDS_PER_LINE, L1_ASSOC>
-{
-    pub fn new() -> Self {
+    const IM_L1_BYTES: usize,
+    const IM_L1_WORDS_PER_LINE: usize,
+    const DM_L1_BYTES: usize,
+    const DM_L1_WORDS_PER_LINE: usize,
+    const IM_L1_ASSOC: usize,
+    const DM_L1_ASSOC: usize,
+    > Memory<
+    FULL_BYTES,
+    IM_L1_BYTES, IM_L1_WORDS_PER_LINE,
+    DM_L1_BYTES, DM_L1_WORDS_PER_LINE,
+    IM_L1_ASSOC, DM_L1_ASSOC >  {
+    pub fn new(im_addr_start: usize, dm_addr_start: usize) -> Self {
         assert!(FULL_BYTES.is_power_of_two(), "main memory must be power of two");
-        assert!(L1_BYTES  .is_power_of_two(), "L1 size must be power of two");
-        assert!(L1_WORDS_PER_LINE.is_power_of_two(), "line size must be power of two");
-        assert!(L1_BYTES <= FULL_BYTES, "L1 cache cannot be larger than main memory");
+        assert!(IM_L1_BYTES.is_power_of_two(), "IM L1 size must be power of two");
+        assert!(IM_L1_WORDS_PER_LINE.is_power_of_two(), "IM line size must be power of two");
+        assert!(DM_L1_BYTES.is_power_of_two(), "DM L1 size must be power of two");
+        assert!(DM_L1_WORDS_PER_LINE.is_power_of_two(), "DM line size must be power of two");
+        assert!(im_addr_start.is_power_of_two() || im_addr_start == 0, 
+            "Instructions addr must start at pow of 2");
+        assert!(dm_addr_start.is_power_of_two() || im_addr_start == 0, 
+            "Data addr must start at pow of 2");
+
+        // TODO: check addr spaces dont overlap
+        // TODO: check that caches arent too big
 
         Self {
-            stats: MemStats::new(),
-            l1:   Cache::DirectMapped(DMCache::<L1_BYTES, L1_WORDS_PER_LINE>::new()),
-            main: MainMemory::new(),
+            im_start_addr: im_addr_start, 
+            dm_start_addr: dm_addr_start,
             size: FULL_BYTES,
+            stats: MemStats::new(),
+            im: Cache::DirectMapped(DMCache::<IM_L1_BYTES, IM_L1_WORDS_PER_LINE>::new()),
+            dm: Cache::DirectMapped(DMCache::<DM_L1_BYTES, DM_L1_WORDS_PER_LINE>::new()),
+            main: MainMemory::new(),
+        }
+    }
+
+    #[inline(always)]
+    fn choose_cache(&self, addr: usize) -> Option<WhichL1> {
+        if addr >= self.im_start_addr{
+            return Some(WhichL1::Instr);
+        } else if addr >= self.dm_start_addr {
+            return Some(WhichL1::Instr);
+        } else {
+            return None;
         }
     }
 
@@ -113,23 +150,30 @@ impl<
         println!("Memory");
         self.stats.print_summary();
 
-        println!("L1");
-        let l1_stats = self.l1.stats();
-        l1_stats.print_summary();
-        
+        println!("IM L1");
+        let im_l1_stats = self.im.stats();
+        im_l1_stats.print_summary();
+
+        println!("DM L1");
+        let dm_l1_stats = self.dm.stats();
+        dm_l1_stats.print_summary();
+
         println!("Main");
         let mm_stats = self.main.stats();
         mm_stats.print_summary();
-        
+
     }
 }
 
 impl<
     const FULL_BYTES: usize,
-    const L1_BYTES: usize,
-    const L1_WORDS_PER_LINE: usize,
-    const L1_ASSOC: usize,
->MemoryAccess for Memory<FULL_BYTES, L1_BYTES, L1_WORDS_PER_LINE, L1_ASSOC> {
+    const IM_L1_BYTES: usize,
+    const IM_L1_WORDS_PER_LINE: usize,
+    const DM_L1_BYTES: usize,
+    const DM_L1_WORDS_PER_LINE: usize,
+    const IM_L1_ASSOC: usize,
+    const DM_L1_ASSOC: usize,
+    > MemoryAccess for Memory<FULL_BYTES, IM_L1_BYTES, IM_L1_WORDS_PER_LINE, IM_L1_ASSOC, DM_L1_BYTES, DM_L1_WORDS_PER_LINE, DM_L1_ASSOC> {
     fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
         if addr >= self.size {
             return Err(MemoryError::OutOfBounds);
@@ -140,35 +184,63 @@ impl<
             return Err(MemoryError::NotAligned);
         }
 
-        match self.l1.read(addr, size.clone()) {
-            Ok(data) => {
-                self.stats.record_hit();
-                Ok(data)
-            }
-            
-            Err(MemoryError::NotFound) => {
-                self.stats.record_miss();
+        match self.choose_cache(addr) {
+            Some(WhichL1::Instr) => {
+                match self.im.read(addr, size.clone()) {
+                    Ok(data) => {
+                        self.stats.record_hit();
+                        Ok(data)
+                    }
+
+                    Err(MemoryError::NotFound) => {
+                        self.stats.record_miss();
 
 
-                let fetch_base_addr = self.l1.get_base_addr(addr);
-                
-                if self.l1.is_line_dirty(addr) {
-                    let write_back_addr = self.l1.get_writeback_addr(addr);
-                    let write_back_line = self.l1.get_evict_line_data(addr);
-                    self.main.write_line(write_back_addr, L1_WORDS_PER_LINE, write_back_line);
+                        let fetch_base_addr = self.im.get_base_addr(addr);
+
+                        if self.im.is_line_dirty(addr) {
+                            let write_back_addr = self.im.get_writeback_addr(addr);
+                            let write_back_line = self.im.get_evict_line_data(addr);
+                            self.main.write_line(write_back_addr, IM_L1_WORDS_PER_LINE, write_back_line);
+                        }
+
+                        let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
+                        self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
+                        self.im.read(addr, size)
+                    }
+
+                    Err(e) => Err(e),
                 }
-
-                let new_line = self.main.fetch_line(fetch_base_addr, L1_WORDS_PER_LINE);
-                self.l1.write_line(fetch_base_addr, L1_WORDS_PER_LINE, new_line);
-                self.l1.read(addr, size)
             }
+            Some(WhichL1::Data) => {
+                match self.dm.read(addr, size.clone()) {
+                    Ok(data) => {
+                        self.stats.record_hit();
+                        Ok(data)
+                    }
 
-            Err(e) => Err(e),
+                    Err(MemoryError::NotFound) => {
+                        self.stats.record_miss();
+
+
+                        let fetch_base_addr = self.dm.get_base_addr(addr);
+
+                        if self.dm.is_line_dirty(addr) {
+                            let write_back_addr = self.dm.get_writeback_addr(addr);
+                            let write_back_line = self.dm.get_evict_line_data(addr);
+                            self.main.write_line(write_back_addr, DM_L1_WORDS_PER_LINE, write_back_line);
+                        }
+
+                        let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
+                        self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
+                        self.dm.read(addr, size)
+                    }
+
+                    Err(e) => Err(e),
+                }
+            }
+            _ => Err(MemoryError::NotCompatible),
         }
-    }
-
-    fn stats(&self) -> &MemStats {
-        &self.stats
     }
 
     fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
@@ -181,31 +253,70 @@ impl<
             return Err(MemoryError::NotAligned);
         }
 
-        match self.l1.write(data, addr) {
-            Ok(()) => {
-                self.stats.record_hit();
-                Ok(())
-            }
+        match self.choose_cache(addr) {
+            Some(WhichL1::Instr) => {
+                match self.im.write(data, addr) {
+                    Ok(()) => {
+                        self.stats.record_hit();
+                        Ok(())
+                    }
 
-            Err(MemoryError::NotFound) => {
-                self.stats.record_miss();
+                    Err(MemoryError::NotFound) => {
+                        self.stats.record_miss();
 
+                        let fetch_base_addr = self.im.get_base_addr(addr);
 
-                let fetch_base_addr = self.l1.get_base_addr(addr);
-                
-                if self.l1.is_line_dirty(addr) {
-                    let write_back_addr = self.l1.get_writeback_addr(addr);
-                    let write_back_line = self.l1.get_evict_line_data(addr);
-                    self.main.write_line(write_back_addr, L1_WORDS_PER_LINE, write_back_line);
+                        if self.im.is_line_dirty(addr) {
+                            let write_back_addr = self.im.get_writeback_addr(addr);
+                            let write_back_line = self.im.get_evict_line_data(addr);
+                            self.main.write_line(write_back_addr, IM_L1_WORDS_PER_LINE, write_back_line);
+                        }
+
+                        let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
+                        self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
+                        self.im.write(data, addr)
+                    }
+
+                    Err(e) => Err(e),
                 }
 
-                let new_line = self.main.fetch_line(fetch_base_addr, L1_WORDS_PER_LINE);
-                self.l1.write_line(fetch_base_addr, L1_WORDS_PER_LINE, new_line);
-                self.l1.write(data, addr)
             }
+            Some(WhichL1::Data) => {
+                match self.dm.write(data, addr) {
+                    Ok(()) => {
+                        self.stats.record_hit();
+                        Ok(())
+                    }
 
-            Err(e) => Err(e),
+                    Err(MemoryError::NotFound) => {
+                        self.stats.record_miss();
+
+                        let fetch_base_addr = self.dm.get_base_addr(addr);
+
+                        if self.dm.is_line_dirty(addr) {
+                            let write_back_addr = self.dm.get_writeback_addr(addr);
+                            let write_back_line = self.dm.get_evict_line_data(addr);
+                            self.main.write_line(write_back_addr, DM_L1_WORDS_PER_LINE, write_back_line);
+                        }
+
+                        let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
+                        self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
+                        self.dm.write(data, addr)
+                    }
+
+                    Err(e) => Err(e),
+                }
+            }
+            _ => Err(MemoryError::NotCompatible),
         }
+
+
+    }
+
+
+
+    fn stats(&self) -> &MemStats {
+        &self.stats
     }
 }
 
@@ -220,8 +331,8 @@ mod tests {
         const MEM_SIZE: usize = 1 << 12;
         const L1_SIZE: usize = 1 << 10;
         const W_P_L: usize = 4;
-        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L>;
-        let mem = Mem::new();
+        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L, L1_SIZE, W_P_L>;
+        let mem = Mem::new(0, L1_SIZE);
         println!("{:#?}", mem);
     }
 
@@ -230,9 +341,9 @@ mod tests {
         const MEM_SIZE: usize = 1 << 12;
         const L1_SIZE: usize = 1 << 10;
         const W_P_L: usize = 4;
-        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L>;
-        let mut m = Mem::new();
-        
+        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L, L1_SIZE, W_P_L>;
+        let mut m = Mem::new(0, L1_SIZE);
+
         let addr = 0x10;
         let byte = DataType::Byte(0xff);
 
@@ -246,7 +357,6 @@ mod tests {
         }
         assert_eq!(dut_byte, byte);
 
-        // TODO: check cache stats
         assert_eq!(m.stats.total_accesses(), 2);
         assert_eq!(m.stats.hit_rate(), 0.5);
         assert_eq!(m.stats.miss_rate(), 0.5);
@@ -257,8 +367,8 @@ mod tests {
         const MEM_SIZE: usize = 1 << 12;
         const L1_SIZE: usize = 1 << 10;
         const W_P_L: usize = 4;
-        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L>;
-        let mut m = Mem::new();
+        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L, L1_SIZE, W_P_L>;
+        let mut m = Mem::new(0, L1_SIZE);
 
         // write line to main mem and check values
         let expected_data: Vec<u32> = (0..W_P_L).map(|i| i as u32).collect();
@@ -286,11 +396,11 @@ mod tests {
         let expected_accesses = W_P_L;
         let expected_hit = (W_P_L-1) as f64 / m.stats.total_accesses() as f64;
         let expected_miss = ((expected_accesses % W_P_L) + 1) as f64 / m.stats.total_accesses() as f64;
-        
+
         assert_eq!(m.stats.total_accesses(), expected_accesses, "Incorrect accesses");
         assert!((m.stats.hit_rate() - expected_hit).abs() < EPSILON, "Incorrect Hit Rate");
         assert!((m.stats.miss_rate() - expected_miss).abs() < EPSILON, "Incorrect Miss Rate");
-    
+
     }
 
     #[test]
@@ -298,10 +408,9 @@ mod tests {
         const MEM_SIZE: usize = 1 << 12;
         const L1_SIZE: usize = 1 << 10;
         const W_P_L: usize = 16;
-        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L>;
+        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L, L1_SIZE, W_P_L>;
+        let mut m = Mem::new(0, L1_SIZE);
 
-        let mut m = Mem::new();
-        
         let expected_accesses = W_P_L+1;
         for i in 0..expected_accesses {
             let addr = i * WORDSIZE;
@@ -312,7 +421,7 @@ mod tests {
 
         let expected_hit = (W_P_L-1) as f64 / m.stats.total_accesses() as f64;
         let expected_miss = ((expected_accesses % W_P_L) + 1) as f64 / m.stats.total_accesses() as f64;
-        
+
         assert_eq!(m.stats.total_accesses(), expected_accesses, "Incorrect accesses");
         assert!((m.stats.hit_rate() - expected_hit).abs() < EPSILON, "Incorrect Hit Rate");
         assert!((m.stats.miss_rate() - expected_miss).abs() < EPSILON, "Incorrect Miss Rate");
@@ -323,9 +432,9 @@ mod tests {
         const MEM_SIZE: usize = 1 << 12;
         const L1_SIZE: usize = 1 << 10;
         const W_P_L: usize = 16;
-        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L>;
+        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L, L1_SIZE, W_P_L>;
+        let mut m = Mem::new(0, L1_SIZE);
 
-        let mut m = Mem::new();
 
         for i in 0..L1_SIZE/WORDSIZE {
             let addr = i * WORDSIZE;
@@ -336,7 +445,7 @@ mod tests {
 
         let expected_hit = (W_P_L-1) as f64 / W_P_L as f64;
         let expected_miss = 1 as f64 / W_P_L as f64;
-        
+
         assert_eq!(m.stats.total_accesses(), L1_SIZE/WORDSIZE, "Incorrect accesses");
         assert!((m.stats.hit_rate() - expected_hit).abs() < EPSILON, "Incorrect Hit Rate");
         assert!((m.stats.miss_rate() - expected_miss).abs() < EPSILON, "Incorrect Miss Rate");
@@ -347,14 +456,13 @@ mod tests {
         const MEM_SIZE: usize = 1 << 12;
         const L1_SIZE: usize = 1 << 10;
         const W_P_L: usize = 16;
-        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L>;
-
-        let mut m = Mem::new();
+        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L, L1_SIZE, W_P_L>;
+        let mut m = Mem::new(0, 2 * L1_SIZE);
 
         // cause a miss and write to the cache
-        let bb = m.l1.byte_bits(); // lowest bits
-        let wb = m.l1.word_bits(); // next bits
-        let ib = m.l1.index_bits(); // next bits
+        let bb = m.im.byte_bits(); // lowest bits
+        let wb = m.im.word_bits(); // next bits
+        let ib = m.im.index_bits(); // next bits
 
         let addr1 = (1 << (ib + wb + bb)) | (0x8 << ib) | 
                             (0x4 << wb) | (0x0 << bb);
@@ -388,11 +496,11 @@ mod tests {
             DataType::from(h)
         }
 
-        const MEM_SIZE: usize = 1 << 10;
-        const L1_SIZE: usize = 1 << 7;
-        const W_P_L: usize = 4;
-        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L>;
-        let mut m = Mem::new();
+        const MEM_SIZE: usize = 1 << 12;
+        const L1_SIZE: usize = 1 << 10;
+        const W_P_L: usize = 16;
+        type Mem = Memory<MEM_SIZE, L1_SIZE, W_P_L, L1_SIZE, W_P_L>;
+        let mut m = Mem::new(0, 2 * L1_SIZE);
 
         let expected_data: Vec<DataType> = (0..MEM_SIZE)
             .map(|i| hash_func(i))
@@ -410,5 +518,34 @@ mod tests {
             }  
         }
     }
+
+    // #[test]
+    // fn access_im() {
+
+    // }
+
+    // // #[test]
+    // // fn access_dm() {
+
+    // // }
+
+
+    // // #[test]
+    // // fn access_im_dm() {
+
+    // // }
+
+
+    // // #[test]
+    // // fn access_im_dm_evictions() {
+
+    // // }
+
+
+    // // #[test]
+    // // fn access_im_dm_whole() {
+
+    // // }
+
 }
 
