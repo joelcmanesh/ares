@@ -19,20 +19,13 @@ impl<const BYTES: usize> MainMemory<BYTES> {
 impl<const BYTES: usize> MemLevelAccess for MainMemory<BYTES> {
     fn write_line(&mut self, base_addr: usize, words_per_lines: usize, data: Vec<u8>) {
         let n_bytes: usize = words_per_lines * WORDSIZE; 
-        // for i in 0..n_bytes {
-        //     self.data[base_addr + i] = data[i];
-            
-        // }
+
         self.data[base_addr..(n_bytes + base_addr)].copy_from_slice(&data[..n_bytes]);
     }
 
     fn fetch_line(&self, base_addr: usize, words_per_lines: usize) -> Vec<u8> {
         let n_bytes: usize = words_per_lines * WORDSIZE; 
         let mut ret_vec: Vec<u8> = vec![0; n_bytes];
-        // for i in 0..n_bytes {
-        //     ret_vec[i] = self.data[base_addr + i].clone(); 
-        // }
-        // self.data[base_addr..(n_bytes + base_addr)].copy_from_slice(&data[..n_bytes]);
     
         ret_vec[..n_bytes].copy_from_slice(&self.data[base_addr..(n_bytes + base_addr)]);
         ret_vec

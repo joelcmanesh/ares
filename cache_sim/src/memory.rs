@@ -117,8 +117,9 @@ impl<
         let l1_stats = self.l1.stats();
         l1_stats.print_summary();
         
-        // println!("Main");
-        // self.stats.print_summary();
+        println!("Main");
+        let mm_stats = self.main.stats();
+        mm_stats.print_summary();
         
     }
 }
