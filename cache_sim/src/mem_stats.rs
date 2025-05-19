@@ -39,9 +39,9 @@ impl MemStats {
     }
 
     pub fn print_summary(&self) {
-        println!("Hits: {}", self.hits);
-        println!("Misses: {}", self.misses);
-        println!("Hit Rate: {:.2}%", self.hit_rate() * 100.0);
-        println!("Miss Rate: {:.2}%", self.miss_rate() * 100.0);
+        println!("\tHits: {}", self.hits);
+        println!("\tMisses: {}", self.misses);
+        println!("\tHit Rate: {:.2}%", self.hit_rate() * 100.0);
+        println!("\tMiss Rate: {:.2}%", self.miss_rate() * 100.0);
     }
 }
