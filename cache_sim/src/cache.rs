@@ -43,17 +43,17 @@ pub trait CacheAddressing {
 }
 
 impl<const B: usize, const W: usize, const A: usize> MemoryAccess for Cache<B, W, A> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool) -> Result<DataType, MemoryError> {
         match self {
-            Cache::DirectMapped(dm) => dm.read(addr, size),
+            Cache::DirectMapped(dm) => dm.read(addr, size, dont_count),
             // Cache::SetAssociative(sa) => sa.read(addr, size),
             // Cache::FullyAssociative(fa) => fa.read(addr, size),
         }
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError> {
         match self {
-            Cache::DirectMapped(dm) => dm.write(data, addr),
+            Cache::DirectMapped(dm) => dm.write(data, addr, dont_count),
             // Cache::SetAssociative(sa) => sa.write(data, addr),
             // Cache::FullyAssociative(fa) => fa.write(data, addr),
         }

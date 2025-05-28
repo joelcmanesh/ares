@@ -67,7 +67,7 @@ impl<const BYTES: usize, const WORDS_PER_LINE: usize, const ASSOC: usize>
 }
 
 impl<const B: usize, const W: usize, const A: usize> MemoryAccess for SetAssocCache<B, W, A> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool) -> Result<DataType, MemoryError> {
         let (way, ind) = match self.find_line(addr) {
             Some(pos) => {
                 self.stats.record_hit();
@@ -119,7 +119,7 @@ impl<const B: usize, const W: usize, const A: usize> MemoryAccess for SetAssocCa
         Ok(data)
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError> {
         let (way, ind) = match self.find_line(addr) {
             Some(pos) => {
                 self.stats.record_hit();

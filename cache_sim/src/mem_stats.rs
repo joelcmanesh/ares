@@ -20,6 +20,10 @@ impl MemStats {
         self.misses += 1;
     }
 
+    pub fn record_miss_read(&mut self) {
+        self.hits -= 1;
+    }
+    
 
     pub fn total_accesses(&self) -> usize {
         self.hits + self.misses
@@ -38,7 +42,9 @@ impl MemStats {
         1.0 - self.hit_rate()
     }
 
+
     pub fn print_summary(&self) {
+        println!("\tAccesses: {}", self.total_accesses());
         println!("\tHits: {}", self.hits);
         println!("\tMisses: {}", self.misses);
         println!("\tHit Rate: {:.2}%", self.hit_rate() * 100.0);

@@ -41,8 +41,8 @@ pub enum MemoryError {
 }
 
 pub trait MemoryAccess {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError>;
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError>; 
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool) -> Result<DataType, MemoryError>;
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError>; 
     fn stats(&self) -> &MemStats;
 }
 
@@ -178,7 +178,7 @@ impl<
     IM_L1_BYTES, IM_L1_WORDS_PER_LINE, 
     DM_L1_BYTES, DM_L1_WORDS_PER_LINE, 
     DM_L1_ASSOC, IM_L1_ASSOC> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool) -> Result<DataType, MemoryError> {
         if addr >= self.size {
             return Err(MemoryError::OutOfBounds);
         }
@@ -190,7 +190,7 @@ impl<
 
         match self.choose_cache(addr) {
             Some(WhichL1::Instr) => {
-                match self.im.read(addr, size.clone()) {
+                match self.im.read(addr, size.clone(), false) {
                     Ok(data) => {
                         self.stats.record_hit();
                         Ok(data)
@@ -198,7 +198,6 @@ impl<
 
                     Err(MemoryError::NotFound) => {
                         self.stats.record_miss();
-
 
                         let fetch_base_addr = self.im.get_base_addr(addr);
 
@@ -210,14 +209,14 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
                         self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
-                        self.im.read(addr, size)
+                        self.im.read(addr, size, true)
                     }
 
                     Err(e) => Err(e),
                 }
             }
             Some(WhichL1::Data) => {
-                match self.dm.read(addr, size.clone()) {
+                match self.dm.read(addr, size.clone(), false) {
                     Ok(data) => {
                         self.stats.record_hit();
                         Ok(data)
@@ -237,7 +236,7 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
                         self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
-                        self.dm.read(addr, size)
+                        self.dm.read(addr, size, true)
                     }
 
                     Err(e) => Err(e),
@@ -247,7 +246,7 @@ impl<
         }
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError> {
         if addr >= self.size {
             return Err(MemoryError::OutOfBounds);
         }
@@ -259,7 +258,7 @@ impl<
 
         match self.choose_cache(addr) {
             Some(WhichL1::Instr) => {
-                match self.im.write(data, addr) {
+                match self.im.write(data, addr, false) {
                     Ok(()) => {
                         self.stats.record_hit();
                         Ok(())
@@ -278,7 +277,7 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
                         self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
-                        self.im.write(data, addr)
+                        self.im.write(data, addr, true)
                     }
 
                     Err(e) => Err(e),
@@ -286,7 +285,7 @@ impl<
 
             }
             Some(WhichL1::Data) => {
-                match self.dm.write(data, addr) {
+                match self.dm.write(data, addr, false) {
                     Ok(()) => {
                         self.stats.record_hit();
                         Ok(())
@@ -305,7 +304,7 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
                         self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
-                        self.dm.write(data, addr)
+                        self.dm.write(data, addr, true)
                     }
 
                     Err(e) => Err(e),

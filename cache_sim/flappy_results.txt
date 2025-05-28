@@ -1,0 +1,24 @@
+Memory
+	Accesses: 171006476
+	Hits: 170766388
+	Misses: 240088
+	Hit Rate: 99.86%
+	Miss Rate: 0.14%
+IM L1
+	Accesses: 0
+	Hits: 0
+	Misses: 0
+	Hit Rate: 0.00%
+	Miss Rate: 100.00%
+DM L1
+	Accesses: 171006476
+	Hits: 170766388
+	Misses: 240088
+	Hit Rate: 99.86%
+	Miss Rate: 0.14%
+Main
+	Accesses: 0
+	Hits: 0
+	Misses: 0
+	Hit Rate: 0.00%
+	Miss Rate: 100.00%

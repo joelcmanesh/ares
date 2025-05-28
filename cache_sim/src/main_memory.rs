@@ -33,7 +33,7 @@ impl<const BYTES: usize> MemLevelAccess for MainMemory<BYTES> {
 }
 
 impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize, _dont_count: bool) -> Result<DataType, MemoryError> {
         if addr >= BYTES {
             return Err(MemoryError::OutOfBounds);
         }
@@ -99,7 +99,7 @@ impl<const BYTES: usize> MemoryAccess for MainMemory<BYTES> {
         }
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+    fn write(&mut self, data: DataType, addr: usize, _dont_count: bool) -> Result<(), MemoryError> {
         if addr >= BYTES {
             return Err(MemoryError::OutOfBounds);
         }
