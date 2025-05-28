@@ -3,14 +3,16 @@ use crate::mem_stats::*;
 use crate::direct_map::*;
 // use crate::set_associative::*;
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
 
-// #[warn(dead_code)]
-// #[derive(Debug)]
-// pub enum EvictionPolicy {
-//     LRU,
-//     RANDOM
-// }
+#[derive(Debug)]
+pub enum EvictionPolicy {
+    Lru,
+    Nru,
+    Random
+}
 
 #[derive(Debug)]
 pub enum Cache<
@@ -22,16 +24,6 @@ pub enum Cache<
     // SetAssociative(SetAssocCache<BYTES, WORDS_PER_LINE, ASSOC>),
     // FullyAssociative(FAssocCache<BYTES, WORDS_PER_LINE>),
 }
-
-// impl<const BYTES: usize, const WORDS_PER_LINE: usize, const ASSOC: usize> Cache<BYTES, WORDS_PER_LINE, ASSOC> {
-//     pub fn print_summary(&self) {
-//         match self {
-//             Cache::DirectMapped(dm) => dm.print_summary(),
-//             // Cache::SetAssociative(sa) => sa.print_summary(),
-//             // Cache::FullyAssociative(fa) => fa.print_summary(),
-//         }
-//     }
-// }
 
 pub trait CacheAddressing {
     fn is_line_dirty(&self, addr: usize) -> bool;
@@ -197,6 +189,7 @@ pub struct CacheLine {
     valid: bool,
     dirty: bool,
     tag: usize,
+    time: u128,
     data: Vec<u8>,
 }
 
@@ -206,7 +199,8 @@ impl CacheLine {
             valid: false,
             dirty: false,
             tag: 0,
-            data: vec![0; words_per_line * WORDSIZE]
+            time: 0,
+            data: vec![0; words_per_line * WORDSIZE],
         }
     }
 
@@ -214,8 +208,15 @@ impl CacheLine {
     pub fn is_valid(&self) -> bool { self.valid }
     pub fn is_dirty(&self) -> bool { self.dirty }
     pub fn tag(&self) -> usize     { self.tag }
+    pub fn time(&self) -> u128     { self.time }
     pub fn get_data(&self) -> Vec<u8> { self.data.clone()}
 
+    pub fn stamp_now(&mut self) {
+        self.time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before 1970")
+            .as_nanos();
+    }
 
     pub fn read_byte(&self, offset: usize) -> u8 {
         self.data[offset]
@@ -231,6 +232,7 @@ impl CacheLine {
         self.data = new_data.clone();
         self.valid = true;
         self.dirty = false;
+        self.stamp_now();
     }
 
     pub fn read_line_data(&self) -> Vec<u8> {

@@ -46,7 +46,7 @@ impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
             return Err(MemoryError::NotFound);
         }
         
-        self.stats.record_hit();
+        self.stats.record_hit(); // TODO: dont increment if miss from above
         
         let byte_index = WORDSIZE * word + byte;
 
@@ -160,7 +160,7 @@ impl<const B: usize, const W: usize> MemLevelAccess for DMCache<B, W> {
     }
 }
 
-impl<const BYTES: usize,const WORDS_PER_LINE: usize,> CacheAddressing for DMCache<BYTES, WORDS_PER_LINE> {
+impl<const B: usize,const W: usize,> CacheAddressing for DMCache<B, W> {
     #[inline(always)]
     fn byte_bits(&self) -> usize {
         WORDSIZE.trailing_zeros() as usize
@@ -168,7 +168,7 @@ impl<const BYTES: usize,const WORDS_PER_LINE: usize,> CacheAddressing for DMCach
     
     #[inline(always)]
     fn word_bits(&self) -> usize {
-        WORDS_PER_LINE.trailing_zeros() as usize
+        W.trailing_zeros() as usize
     }
 
     #[inline(always)]

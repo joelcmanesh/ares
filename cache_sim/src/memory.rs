@@ -700,6 +700,25 @@ mod tests {
         assert_eq!(m.im.stats().total_accesses(), 0, "Incorrect accesses");
     }
 
+    #[test]
+    fn diff_size_l1s() {
+        const MEM_SIZE: usize = 1 << 16;
+        const IM_L1_SIZE: usize = 1 << 11;
+        const IM_W_P_L: usize = 16;
+        const DM_L1_SIZE: usize = 1 << 13;
+        const DM_W_P_L: usize = 8;
+        type Mem = Memory<MEM_SIZE, IM_L1_SIZE, IM_W_P_L, DM_L1_SIZE, DM_W_P_L>;
+        const IM_BASE: usize = 0;
+        const DM_BASE: usize = 0x6000;
+        let mut m = Mem::new(IM_BASE, DM_BASE);
+
+        for i in (0..MEM_SIZE).into_iter().step_by(WORDSIZE) {
+            let _ = m.read(i, DataTypeSize::Word);
+        }
+
+        m.print_summary();
+    }
+
     /* TESTS
      * im single access
      * dm single access
