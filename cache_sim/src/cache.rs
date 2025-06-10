@@ -238,4 +238,9 @@ impl CacheLine {
     pub fn read_line_data(&self) -> Vec<u8> {
         self.data.clone()
     }
+
+    pub fn reset_time(&mut self) {
+        self.time = 0;
+    }
+
 }

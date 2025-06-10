@@ -92,7 +92,7 @@ pub struct Memory<
         stats: MemStats,
         im: Cache<IM_L1_BYTES, IM_L1_WORDS_PER_LINE, IM_L1_ASSOC>,
         dm: Cache<DM_L1_BYTES, DM_L1_WORDS_PER_LINE, DM_L1_ASSOC>,
-        im_start_addr: usize,
+        mmio_start_addr: usize,
         dm_start_addr: usize,
         main: MainMemory<FULL_BYTES>,
     }
@@ -110,22 +110,19 @@ impl<
     IM_L1_BYTES, IM_L1_WORDS_PER_LINE,
     DM_L1_BYTES, DM_L1_WORDS_PER_LINE,
     IM_L1_ASSOC, DM_L1_ASSOC >  {
-    pub fn new(im_addr_start: usize, dm_addr_start: usize) -> Self {
+    pub fn new(mmio_start_addr: usize, dm_addr_start: usize) -> Self {
         assert!(FULL_BYTES.is_power_of_two(), "main memory must be power of two");
         assert!(IM_L1_BYTES.is_power_of_two(), "IM L1 size must be power of two");
         assert!(IM_L1_WORDS_PER_LINE.is_power_of_two(), "IM line size must be power of two");
         assert!(DM_L1_BYTES.is_power_of_two(), "DM L1 size must be power of two");
         assert!(DM_L1_WORDS_PER_LINE.is_power_of_two(), "DM line size must be power of two");
-        assert!(im_addr_start.is_power_of_two() || im_addr_start == 0, 
-            "Instructions addr must start at pow of 2");
-        assert!(dm_addr_start.is_power_of_two() || im_addr_start == 0, 
-            "Data addr must start at pow of 2");
-
-        // TODO: check addr spaces dont overlap
-        // TODO: check that caches arent too big
+        assert!(mmio_start_addr.is_power_of_two(), 
+            "Instructions addr must start at pow of 2 {mmio_start_addr:x}");
+        // assert!(dm_addr_start.is_power_of_two(), 
+            // "Data addr must start at pow of 2 {dm_addr_start:x}");
 
         Self {
-            im_start_addr: im_addr_start, 
+            mmio_start_addr: mmio_start_addr, 
             dm_start_addr: dm_addr_start,
             size: FULL_BYTES,
             stats: MemStats::new(),
@@ -179,8 +176,9 @@ impl<
     DM_L1_BYTES, DM_L1_WORDS_PER_LINE, 
     DM_L1_ASSOC, IM_L1_ASSOC> {
     fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
-        if addr >= self.size {
-            return Err(MemoryError::OutOfBounds);
+        if addr >= self.mmio_start_addr {
+            return Ok(DataType::Word(0xcafebabe));
+            // return Err(MemoryError::OutOfBounds);
         }
 
         let align = DataTypeSize::get_size(size.clone());
@@ -248,8 +246,9 @@ impl<
     }
 
     fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
-        if addr >= self.size {
-            return Err(MemoryError::OutOfBounds);
+        if addr >= self.mmio_start_addr {
+            return Ok(());
+            // return Err(MemoryError::OutOfBounds);
         }
 
         let align = data.payload_size();
