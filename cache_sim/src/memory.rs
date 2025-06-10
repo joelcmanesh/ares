@@ -2,7 +2,8 @@ use crate::mem_stats::*;
 use crate::main_memory::*;
 use crate::cache::*;
 use crate::direct_map::*;
-// use crate::set_associative::*;
+use crate::set_associative::*;
+// use crate::set_associative::SetAssocCache;
 
 use std::mem;
 
@@ -41,8 +42,8 @@ pub enum MemoryError {
 }
 
 pub trait MemoryAccess {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError>;
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError>; 
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool) -> Result<DataType, MemoryError>;
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError>; 
     fn stats(&self) -> &MemStats;
 }
 
@@ -126,7 +127,9 @@ impl<
             dm_start_addr: dm_addr_start,
             size: FULL_BYTES,
             stats: MemStats::new(),
-            im: Cache::DirectMapped(DMCache::<IM_L1_BYTES, IM_L1_WORDS_PER_LINE>::new()),
+            im: Cache::SetAssociative(SetAssocCache::<IM_L1_BYTES, IM_L1_WORDS_PER_LINE, IM_L1_ASSOC>::new(EvictionPolicy::Lru)),
+            // dm: Cache::SetAssociative(SetAssocCache::<DM_L1_BYTES, DM_L1_WORDS_PER_LINE, DM_L1_ASSOC>::new(EvictionPolicy::Lru)),
+            // im: Cache::DirectMapped(DMCache::<IM_L1_BYTES, IM_L1_WORDS_PER_LINE>::new()),
             dm: Cache::DirectMapped(DMCache::<DM_L1_BYTES, DM_L1_WORDS_PER_LINE>::new()),
             main: MainMemory::new(),
         }
@@ -175,7 +178,7 @@ impl<
     IM_L1_BYTES, IM_L1_WORDS_PER_LINE, 
     DM_L1_BYTES, DM_L1_WORDS_PER_LINE, 
     DM_L1_ASSOC, IM_L1_ASSOC> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize, _: bool) -> Result<DataType, MemoryError> {
         if addr >= self.mmio_start_addr {
             return Ok(DataType::Word(0xcafebabe));
             // return Err(MemoryError::OutOfBounds);
@@ -188,7 +191,7 @@ impl<
 
         match self.choose_cache(addr) {
             Some(WhichL1::Instr) => {
-                match self.im.read(addr, size.clone()) {
+                match self.im.read(addr, size.clone(), false) {
                     Ok(data) => {
                         self.stats.record_hit();
                         Ok(data)
@@ -208,14 +211,14 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
                         self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
-                        self.im.read(addr, size)
+                        self.im.read(addr, size, true)
                     }
 
                     Err(e) => Err(e),
                 }
             }
             Some(WhichL1::Data) => {
-                match self.dm.read(addr, size.clone()) {
+                match self.dm.read(addr, size.clone(), false) {
                     Ok(data) => {
                         self.stats.record_hit();
                         Ok(data)
@@ -235,7 +238,7 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
                         self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
-                        self.dm.read(addr, size)
+                        self.dm.read(addr, size, true)
                     }
 
                     Err(e) => Err(e),
@@ -245,7 +248,7 @@ impl<
         }
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+    fn write(&mut self, data: DataType, addr: usize, _: bool) -> Result<(), MemoryError> {
         if addr >= self.mmio_start_addr {
             return Ok(());
             // return Err(MemoryError::OutOfBounds);
@@ -258,7 +261,7 @@ impl<
 
         match self.choose_cache(addr) {
             Some(WhichL1::Instr) => {
-                match self.im.write(data, addr) {
+                match self.im.write(data, addr, false) {
                     Ok(()) => {
                         self.stats.record_hit();
                         Ok(())
@@ -277,7 +280,7 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
                         self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
-                        self.im.write(data, addr)
+                        self.im.write(data, addr, true)
                     }
 
                     Err(e) => Err(e),
@@ -285,7 +288,7 @@ impl<
 
             }
             Some(WhichL1::Data) => {
-                match self.dm.write(data, addr) {
+                match self.dm.write(data, addr, false) {
                     Ok(()) => {
                         self.stats.record_hit();
                         Ok(())
@@ -304,7 +307,7 @@ impl<
 
                         let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
                         self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
-                        self.dm.write(data, addr)
+                        self.dm.write(data, addr, true)
                     }
 
                     Err(e) => Err(e),

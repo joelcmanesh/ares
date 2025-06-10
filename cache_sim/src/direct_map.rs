@@ -36,7 +36,7 @@ impl<const BYTES: usize, const WORDS_PER_LINE: usize> DMCache<BYTES, WORDS_PER_L
 }
 
 impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool) -> Result<DataType, MemoryError> {
         let (_, ind, word, byte) = self.decode_addr(addr);
 
         let line: &CacheLine = &self.lines[ind];
@@ -46,7 +46,7 @@ impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
             return Err(MemoryError::NotFound);
         }
         
-        self.stats.record_hit(); // TODO: dont increment if miss from above
+        if !dont_count {self.stats.record_hit();} // TODO: dont increment if miss from above
         
         let byte_index = WORDSIZE * word + byte;
 
@@ -98,7 +98,7 @@ impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
         &self.stats
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError> {
         let (_, ind, word, byte) = self.decode_addr(addr);
         
         let byte_index = WORDSIZE * word + byte;
@@ -109,7 +109,7 @@ impl<const B: usize, const W: usize> MemoryAccess for DMCache<B, W> {
             return Err(MemoryError::NotFound);
         }
         
-        self.stats.record_hit();
+        if !dont_count {self.stats.record_hit();}
         
         let line: &mut CacheLine = &mut self.lines[ind];
         match data {

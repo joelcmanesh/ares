@@ -1,7 +1,7 @@
 use crate::memory::*;
 use crate::mem_stats::*;
 use crate::direct_map::*;
-// use crate::set_associative::*;
+use crate::set_associative::*;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,7 +21,7 @@ pub enum Cache<
     const ASSOC: usize = 1,        // only SA/FA care
 > {
     DirectMapped(DMCache<BYTES, WORDS_PER_LINE>),
-    // SetAssociative(SetAssocCache<BYTES, WORDS_PER_LINE, ASSOC>),
+    SetAssociative(SetAssocCache<BYTES, WORDS_PER_LINE, ASSOC>),
     // FullyAssociative(FAssocCache<BYTES, WORDS_PER_LINE>),
 }
 
@@ -43,18 +43,18 @@ pub trait CacheAddressing {
 }
 
 impl<const B: usize, const W: usize, const A: usize> MemoryAccess for Cache<B, W, A> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool) -> Result<DataType, MemoryError> {
         match self {
-            Cache::DirectMapped(dm) => dm.read(addr, size),
-            // Cache::SetAssociative(sa) => sa.read(addr, size),
+            Cache::DirectMapped(dm) => dm.read(addr, size, dont_count),
+            Cache::SetAssociative(sa) => sa.read(addr, size, dont_count),
             // Cache::FullyAssociative(fa) => fa.read(addr, size),
         }
     }
 
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError> {
         match self {
-            Cache::DirectMapped(dm) => dm.write(data, addr),
-            // Cache::SetAssociative(sa) => sa.write(data, addr),
+            Cache::DirectMapped(dm) => dm.write(data, addr, dont_count),
+            Cache::SetAssociative(sa) => sa.write(data, addr, dont_count),
             // Cache::FullyAssociative(fa) => fa.write(data, addr),
         }
     }
@@ -62,7 +62,7 @@ impl<const B: usize, const W: usize, const A: usize> MemoryAccess for Cache<B, W
     fn stats(&self) -> &MemStats {
         match self {
             Cache::DirectMapped(dm) => dm.stats(),
-            // Cache::SetAssociative(sa) => sa.stats(),
+            Cache::SetAssociative(sa) => sa.stats(),
             // Cache::FullyAssociative(fa) => fa.stats(),
         }
     }
@@ -72,7 +72,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn get_tag(&self, addr: usize) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.get_tag(addr),
-            // Cache::SetAssociative(sa)    => sa.get_tag(addr),
+            Cache::SetAssociative(sa)    => sa.get_tag(addr),
             // Cache::FullyAssociative(fa)  => fa.get_tag(addr),
         }
     }
@@ -80,7 +80,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn get_index(&self, addr: usize) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.get_index(addr),
-            // Cache::SetAssociative(sa)    => sa.get_index(addr),
+            Cache::SetAssociative(sa)    => sa.get_index(addr),
             // Cache::FullyAssociative(fa)  => fa.get_index(addr),
         }
     }
@@ -88,7 +88,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn get_word_offset(&self, addr: usize) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.get_word_offset(addr),
-            // Cache::SetAssociative(sa)    => sa.get_word_offset(addr),
+            Cache::SetAssociative(sa)    => sa.get_word_offset(addr),
             // Cache::FullyAssociative(fa)  => fa.get_word_offset(addr),
         }
     }
@@ -96,7 +96,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn get_byte_offset(&self, addr: usize) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.get_byte_offset(addr),
-            // Cache::SetAssociative(sa)    => sa.get_byte_offset(addr),
+            Cache::SetAssociative(sa)    => sa.get_byte_offset(addr),
             // Cache::FullyAssociative(fa)  => fa.get_byte_offset(addr),
         }
     }
@@ -104,7 +104,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn is_line_dirty(&self, addr: usize) -> bool {
         match self {
             Cache::DirectMapped(dm) => dm.is_line_dirty(addr),
-            // Cache::SetAssociative(sa)    => sa.is_line_dirty(addr),
+            Cache::SetAssociative(sa)    => sa.is_line_dirty(addr),
             // Cache::FullyAssociative(fa)  => fa.is_line_dirty(addr),
         }
     }
@@ -112,7 +112,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn get_evict_line_data(&self, addr: usize) -> Vec<u8> {
         match self {
             Cache::DirectMapped(dm) => dm.get_evict_line_data(addr),
-            // Cache::SetAssociative(sa)    => sa.get_evict_line_data(addr),
+            Cache::SetAssociative(sa)    => sa.get_evict_line_data(addr),
             // Cache::FullyAssociative(fa)  => fa.get_evict_line_data(addr),
         }
     }
@@ -120,7 +120,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn get_writeback_addr(&self, addr: usize) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.get_writeback_addr(addr),
-            // Cache::SetAssociative(sa)    => sa.get_writeback_addr(addr),
+            Cache::SetAssociative(sa)    => sa.get_writeback_addr(addr),
             // Cache::FullyAssociative(fa)  => fa.get_writeback_addr(addr),
         } 
     }
@@ -128,7 +128,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn get_base_addr(&self, addr: usize) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.get_base_addr(addr),
-            // Cache::SetAssociative(sa)    => sa.get_base_addr(addr),
+            Cache::SetAssociative(sa)    => sa.get_base_addr(addr),
             // Cache::FullyAssociative(fa)  => fa.get_base_addr(addr),
         } 
     }
@@ -136,7 +136,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn decode_addr(&self, addr: usize) -> (usize, usize, usize, usize) {
         match self {
             Cache::DirectMapped(dm) => dm.decode_addr(addr),
-            // Cache::SetAssociative(sa)    => sa.decode_addr(addr),
+            Cache::SetAssociative(sa)    => sa.decode_addr(addr),
             // Cache::FullyAssociative(fa)  => fa.decode_addr(addr),
         }
     }
@@ -144,7 +144,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn index_bits(&self) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.index_bits(),
-            // Cache::SetAssociative(sa)    => sa.index_bits(),
+            Cache::SetAssociative(sa)    => sa.index_bits(),
             // Cache::FullyAssociative(fa)  => fa.index_bits(),
         }
     }
@@ -152,7 +152,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn word_bits(&self) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.word_bits(),
-            // Cache::SetAssociative(sa)    => sa.word_bits(),
+            Cache::SetAssociative(sa)    => sa.word_bits(),
             // Cache::FullyAssociative(fa)  => fa.word_bits(),
         } 
     }
@@ -160,7 +160,7 @@ impl<const B: usize, const W: usize, const A: usize> CacheAddressing for Cache<B
     fn byte_bits(&self) -> usize {
         match self {
             Cache::DirectMapped(dm) => dm.byte_bits(),
-            // Cache::SetAssociative(sa)    => sa.byte_bits(),
+            Cache::SetAssociative(sa)    => sa.byte_bits(),
             // Cache::FullyAssociative(fa)  => fa.byte_bits(),
         } 
     }
@@ -170,15 +170,15 @@ impl<const B: usize, const W: usize, const A: usize> MemLevelAccess for Cache<B,
     fn write_line(&mut self, addr: usize, words_per_lines: usize, data: Vec<u8>) {
         match self {
             Cache::DirectMapped(dm) => dm.write_line(addr, words_per_lines, data),
-            // Cache::SetAssociative(sa) => sa.write_line(addr, size),
-            // Cache::FullyAssociative(fa) => fa.write_line(addr, size),
+            Cache::SetAssociative(sa) => sa.write_line(addr, words_per_lines, data),
+            // Cache::FullyAssociative(fa) => fa.write_line(addr, words_per_lines),
         }
     }
 
     fn fetch_line(&self, addr: usize, words_per_lines: usize) -> Vec<u8> {
         match self {
             Cache::DirectMapped(dm) => dm.fetch_line(addr, words_per_lines),
-            // Cache::SetAssociative(sa) => sa.fetch_line(addr, size),
+            Cache::SetAssociative(sa) => sa.fetch_line(addr, words_per_lines),
             // Cache::FullyAssociative(fa) => fa.fetch_line(addr, size),
         }
     }

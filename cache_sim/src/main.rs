@@ -11,6 +11,7 @@ mod set_associative;
 use crate::memory::{Memory, DataTypeSize, DataType, MemoryAccess};
 
 const TRACE_FILE: &str = "mem_files/med_flappy.txt";
+// const TRACE_FILE: &str = "mem_files/med_flappy.txt";
 
 /* ── compile-time cache geometry ─────────────────────────────────────── */
 const FULL_BYTES         : usize = 1 << 22;   // 4 MiB main memory
@@ -58,9 +59,9 @@ fn main() -> Result<()> {
         match op {
             /* ---------------- READ ---------------- */
             'r' => {
-                let val = mem.read(addr, size_enum)
+                let val = mem.read(addr, size_enum, false)
                     .unwrap_or_else(|e| panic!("L{line_no}: {e:?}"));
-                println!("read {sz_b}B @ 0x{addr:x} → {:?}", val);
+                // println!("read {sz_b}B @ 0x{addr:x} → {:?}", val);
             }
 
             /* ---------------- WRITE --------------- */
@@ -80,9 +81,9 @@ fn main() -> Result<()> {
                     _ => unreachable!(),
                 };
 
-                mem.write(data, addr)
+                mem.write(data, addr, false)
                     .unwrap_or_else(|e| panic!("L{line_no}: {e:?}"));
-                println!("write {:?} @ 0x{addr:x}", data);
+                // println!("write {:?} @ 0x{addr:x}", data);
             }
 
             _ => eprintln!("L{line_no}: unknown op '{op}'"),

@@ -1,305 +1,257 @@
-use std::vec;
+use crate::{
+    cache::{CacheAddressing, EvictionPolicy, CacheLine},
+    mem_stats::*,
+    memory::{DataType, DataTypeSize, MemLevelAccess, MemoryAccess, MemoryError},
+};
 
-use rand::rng;
-use rand::Rng;
-
-use crate::mem_stats::*;
-use crate::memory::*;
-use crate::cache::*;
+/* --------------------------------------------------------------------- */
 
 const WORDSIZE: usize = DataTypeSize::get_size(DataTypeSize::Word);
-pub const ADDR_BITS: usize = 32;
 
 #[derive(Debug)]
 pub struct SetAssocCache<
-    const BYTES: usize,               
-    const WORDS_PER_LINE: usize,      
-    const ASSOC: usize,      
-    > {
+    const BYTES: usize,
+    const WORDS_PER_LINE: usize,
+    const ASSOC: usize,
+> {
+    /* sets[way][index] */
     sets: Vec<Vec<CacheLine>>,
+
+    /* stats */
     eviction: EvictionPolicy,
-    stats: MemStats,
+    stats:    MemStats,
 }
 
-impl<const BYTES: usize, const WORDS_PER_LINE: usize, const ASSOC: usize> 
-    SetAssocCache<BYTES, WORDS_PER_LINE, ASSOC> {
-    
+impl<const BYTES: usize, const WPL: usize, const A: usize>
+    SetAssocCache<BYTES, WPL, A>
+{
+    pub const NUM_LINES: usize = BYTES / (A * WORDSIZE * WPL); // indices
 
-    pub const NUM_LINES: usize = BYTES / (ASSOC * WORDSIZE * WORDS_PER_LINE);
+    pub fn new(eviction: EvictionPolicy) -> Self {
+        assert!(BYTES.is_power_of_two() && WPL.is_power_of_two());
+        assert!(Self::NUM_LINES.is_power_of_two() && Self::NUM_LINES > 0);
 
-    pub fn new(eviction_pol: EvictionPolicy) -> Self {
-        assert!(BYTES.is_power_of_two(), "BYTES must be a power of two");
-        assert!(WORDS_PER_LINE.is_power_of_two(), "WORDS_PER_LINE must be a power of two");
-        assert!(Self::NUM_LINES > 0, "cache must hold ≥ 1 line");
-        assert!(Self::NUM_LINES.is_power_of_two(),"NUM_LINES must be a power of two");
+        let sets = vec![vec![CacheLine::new(WPL); Self::NUM_LINES]; A];
 
-        let sets: Vec<Vec<CacheLine>> = vec![vec![CacheLine::new(WORDS_PER_LINE); Self::NUM_LINES]; ASSOC];
-
-        Self {
-            sets,
-            stats: MemStats::new(),
-            eviction: eviction_pol,
-        }
+        Self { sets, eviction, stats: MemStats::new() }
     }
 
-    // fn get_line(&self, addr: usize) -> Option<&CacheLine> {
-    //     let (tag, ind, _, _) = self.decode_addr(addr);
-    //     for i in 0..ASSOC {
-    //         let line: &CacheLine = &self.sets[i][ind];
-    //         if line.tag() == tag {
-    //             return Some(line);
-    //         }
-    //     }
-    //     None
-    // }
-
-    fn find_line(&self, addr: usize) -> Option<(usize, usize)> {
-        let (tag, ind, _, _) = self.decode_addr(addr);
-        for way in 0..ASSOC {
-            let line = &self.sets[way][ind];
-            if line.is_valid() && line.tag() == tag { 
-                return Some((way, ind));
+    /* ---------------- lookup in a set ---------------- */
+    fn find_line(&self, addr: usize) -> Option<(usize /*way*/, usize /*idx*/)> {
+        let (tag, idx, ..) = self.decode_addr(addr);
+        for way in 0..A {
+            let line = &self.sets[way][idx];
+            if line.is_valid() && line.tag() == tag {
+                return Some((way, idx));
             }
         }
         None
     }
-    
-}
 
-impl<const B: usize, const W: usize, const A: usize> MemoryAccess for SetAssocCache<B, W, A> {
-    fn read(&mut self, addr: usize, size: DataTypeSize) -> Result<DataType, MemoryError> {
-        let (way, ind) = match self.find_line(addr) {
-            Some(pos) => {
-                self.stats.record_hit();
-                pos
-            }
-            None => {
-                self.stats.record_miss();
-                return Err(MemoryError::NotFound);
-            }
-        };
-    
-        let (_, _, word_off, byte_off) = self.decode_addr(addr);
-        let line = &mut self.sets[way][ind];
-        let byte_index = word_off * WORDSIZE + byte_off;
-        line.stamp_now();
-        
-        let data = match size {
-            DataTypeSize::Byte => {
-                DataType::Byte(line.read_byte(byte_index))
-            }
+    /* ---------------- victim policy ------------------ */
+    fn victim_way(&self, idx: usize) -> usize {
+        match self.eviction {
+            /* -------- LRU: smallest timestamp ----------- */
+            EvictionPolicy::Lru => (0..A)
+                .min_by_key(|&w| self.sets[w][idx].time())
+                .unwrap(),
 
-            DataTypeSize::Halfword => {
-                let bytes = [
-                    line.read_byte(byte_index),
-                    line.read_byte(byte_index + 1),
-                ];
-                DataType::Halfword(u16::from_le_bytes(bytes))
-            }
-
-            DataTypeSize::Word => {
-                let bytes = [
-                    line.read_byte(byte_index),
-                    line.read_byte(byte_index + 1),
-                    line.read_byte(byte_index + 2),
-                    line.read_byte(byte_index + 3),
-                ];
-                DataType::Word(u32::from_le_bytes(bytes))
-            }
-
-            DataTypeSize::DoubleWord => {
-                let mut bytes = [0u8; 8];
-                for i in 0..8 {
-                    bytes[i] = line.read_byte(byte_index + i);
-                }
-                DataType::DoubleWord(u64::from_le_bytes(bytes))
-            }
-        };
-
-        Ok(data)
-    }
-
-    fn write(&mut self, data: DataType, addr: usize) -> Result<(), MemoryError> {
-        let (way, ind) = match self.find_line(addr) {
-            Some(pos) => {
-                self.stats.record_hit();
-                pos
-            }
-            None => {
-                self.stats.record_miss();
-                return Err(MemoryError::NotFound);
-            }
-        };
-    
-        let (_, _, word_off, byte_off) = self.decode_addr(addr);
-        let line = &mut self.sets[way][ind];
-        let byte_index = word_off * WORDSIZE + byte_off;
-        line.stamp_now();
-
-        match data {
-            DataType::Byte(val) => {
-                line.write_byte(byte_index, val);
-                Ok(())
-            }
-
-            DataType::Halfword(val) => {
-                let bytes = val.to_le_bytes();
-                for (i, _) in bytes.iter().enumerate() {
-                    line.write_byte(byte_index + i, bytes[i]);
-                }
-                Ok(())
-            }
-
-
-            DataType::Word(val) => {
-
-                let bytes = val.to_le_bytes();
-                for (i, _) in bytes.iter().enumerate() {
-                    line.write_byte(byte_index + i, bytes[i]);
-                }
-                Ok(())
-            }
-
-            DataType::DoubleWord(val) => {
-                let bytes = val.to_le_bytes();
-                for (i, _) in bytes.iter().enumerate() {
-                    line.write_byte(byte_index + i, bytes[i]);
-                }
-                Ok(())
-            }
-        }
-    }
-
-    fn stats(&self) -> &MemStats {
-        &self.stats
-    }
-}
-
-impl<const B: usize, const W: usize, const A: usize> MemLevelAccess for SetAssocCache<B, W, A> {
-    fn write_line(&mut self, addr: usize, _words_per_lines: usize, data: Vec<u8>) {
-        // check sets for invalid lines
-        // if no free sets use eviction policy to throw out a set
-        // should update 
-        let (tag, ind, _, _) = self.decode_addr(addr);
-        
-        if let Some(line) = self.sets
-                                .iter_mut()
-                                .map(|way| &mut way[ind])
-                                .find(|l| !l.is_valid()) 
-        {
-            line.write_line(tag, data);
-            return;
-        }
-        
-        let way = match self.eviction {
-            EvictionPolicy::Random => {
-                rng().random_range(0..A)
-            }
-            EvictionPolicy::Lru => {
+            /* -------- NRU: first line whose time == 0 --- */
+            EvictionPolicy::Nru => {
                 (0..A)
-                    .min_by_key(|&w| self.sets[w][ind].time())
-                    .unwrap()
+                    .find(|&w| self.sets[w][idx].time() == 0)
+                    .unwrap_or_else(|| (0..A)
+                        .min_by_key(|&w| self.sets[w][idx].time())
+                        .unwrap())
             }
-            _ => 0
-        };
-        
-        let line = &mut self.sets[way][ind];
 
-        line.write_line(tag, data);
+            /* any other variant – fall back to LRU */
+            _ => (0..A).min_by_key(|&w| self.sets[w][idx].time()).unwrap(),
+        }
     }
 
-    fn fetch_line(&self, addr: usize, words_per_lines: usize) -> Vec<u8> {
-        vec![0; 1]
-    }
-}
-
-impl<const B: usize, const W: usize, const A: usize> CacheAddressing for SetAssocCache<B, W, A> {
-    #[inline(always)]
-    fn byte_bits(&self) -> usize {
-        WORDSIZE.trailing_zeros() as usize
-    }
-    
-    #[inline(always)]
-    fn word_bits(&self) -> usize {
-        W.trailing_zeros() as usize
-    }
-
-    #[inline(always)]
-    fn index_bits(&self) -> usize {
-        self.sets[0].len().trailing_zeros() as usize
-    }    
+    /* ---------------- address helpers ---------------- */
+    #[inline(always)] fn byte_bits (&self) -> usize { WORDSIZE.trailing_zeros() as usize }
+    #[inline(always)] fn word_bits (&self) -> usize { WPL     .trailing_zeros() as usize }
+    #[inline(always)] fn index_bits(&self) -> usize { Self::NUM_LINES.trailing_zeros() as usize }
 
     fn decode_addr(&self, addr: usize) -> (usize, usize, usize, usize) {
-        let bb = self.byte_bits(); // lowest bits
-        let wb = self.word_bits(); // next bits
-        let ib = self.index_bits(); // next bits
+        let bb = self.byte_bits();
+        let wb = self.word_bits();
+        let ib = self.index_bits();
 
         let byte  =  addr & ((1 << bb) - 1);
         let word  = (addr >>  bb) & ((1 << wb) - 1);
-        let index = (addr >> (bb + wb)) & ((1 << ib) - 1);
+        let idx   = (addr >> (bb + wb)) & ((1 << ib) - 1);
         let tag   =  addr >> (bb + wb + ib);
-        (tag, index, word, byte)
+
+        (tag, idx, word, byte)
     }
 
     #[inline(always)]
-    fn get_tag(&self, addr: usize) -> usize {
-        let (tag, ..) = self.decode_addr(addr); 
-        tag
-    }
-
-    #[inline(always)]
-    fn get_index(&self, addr: usize) -> usize {
-        let (_, ind, ..) = self.decode_addr(addr); 
-        ind
-    }
-
-    #[inline(always)]
-    fn get_word_offset(&self, addr: usize) -> usize {
-        let (_, _, word, ..) = self.decode_addr(addr); 
-        word
-    }
-
-    #[inline(always)]
-    fn get_byte_offset(&self, addr: usize) -> usize {
-        let (_, _, _, byte) = self.decode_addr(addr); 
-        byte
-    }
-
-    // TODO:
-    #[inline(always)]
-    fn is_line_dirty(&self, addr: usize) -> bool {
-        match self.find_line(addr) {
-            Some(pos) => {
-                let line = &self.sets[pos.0][pos.1]; 
-                line.is_dirty()
-            }
-            None => {
-                false
-            }
-        };
-        false
-    }
-
-    // TODO
-    #[inline(always)]
-    fn get_evict_line_data(&self, addr:usize) -> Vec<u8> {
-        match self.eviction {
-            EvictionPolicy::Lru => vec![],
-            EvictionPolicy::Nru => vec![],
-            EvictionPolicy::Random => vec![],
-        }
-    }
-    #[inline(always)]
-    fn get_writeback_addr(&self, addr: usize) -> usize {
-        0
-    }
-
-    #[inline(always)]
-    fn get_base_addr(&self, addr: usize) -> usize {
-        0
+    fn base_addr(&self, tag: usize, idx: usize) -> usize {
+        let bb = self.byte_bits(); let wb = self.word_bits(); let ib = self.index_bits();
+        (tag << (ib + wb + bb)) | (idx << (wb + bb))
     }
 }
 
+/* ===================================================================== */
+/* ================          MemoryAccess impl            ============== */
+/* ===================================================================== */
+
+impl<const B: usize, const W: usize, const A: usize>
+    MemoryAccess for SetAssocCache<B, W, A>
+{
+    fn read(&mut self, addr: usize, size: DataTypeSize, dont_count: bool)
+        -> Result<DataType, MemoryError>
+    {
+        /* ---------- hit / miss ---------- */
+        let (way, idx) = match self.find_line(addr) {
+            Some(hit) => { 
+                if !dont_count {self.stats.record_hit();} 
+                hit 
+            }
+            None      => { 
+                self.stats.record_miss(); 
+                return Err(MemoryError::NotFound);
+            }
+        };
+
+        /* ---------- mark for NRU ---------- */
+        if matches!(self.eviction, EvictionPolicy::Nru) || matches!(self.eviction, EvictionPolicy::Lru) {
+            self.sets[way][idx].stamp_now();        // reuse timestamp as ref-bit
+        }
+
+        /* ---------- extract bytes ---------- */
+        let (_, _, word, byte) = self.decode_addr(addr);
+        let line  = &self.sets[way][idx];
+        let base  = word * WORDSIZE + byte;
+        let read  = |i| line.read_byte(base + i);
+
+        Ok(match size {
+            DataTypeSize::Byte       => DataType::Byte(read(0)),
+            DataTypeSize::Halfword   => DataType::Halfword(u16::from_le_bytes([read(0), read(1)])),
+            DataTypeSize::Word       => DataType::Word(u32::from_le_bytes([read(0), read(1), read(2), read(3)])),
+            DataTypeSize::DoubleWord => {
+                let mut b = [0u8; 8]; for i in 0..8 { b[i] = read(i); }
+                DataType::DoubleWord(u64::from_le_bytes(b))
+            }
+        })
+    }
+
+    fn write(&mut self, data: DataType, addr: usize, dont_count: bool) -> Result<(), MemoryError> {
+        let (way, idx) = match self.find_line(addr) {
+            Some(hit) => { 
+                if !dont_count {self.stats.record_hit();} 
+                hit
+             }
+            None      => { 
+                self.stats.record_miss(); 
+                return Err(MemoryError::NotFound); 
+            }
+        };
+
+        if matches!(self.eviction, EvictionPolicy::Nru) || matches!(self.eviction, EvictionPolicy::Lru) {
+            self.sets[way][idx].stamp_now();
+        }
+
+        let (_, _, word, byte) = self.decode_addr(addr);
+        let offset = word * WORDSIZE + byte;
+        let line   = &mut self.sets[way][idx];
+
+        match data {
+            DataType::Byte(b)       => line.write_byte(offset, b),
+            DataType::Halfword(h)   => for (i, &b) in h.to_le_bytes().iter().enumerate() { line.write_byte(offset + i, b) },
+            DataType::Word(w)       => for (i, &b) in w.to_le_bytes().iter().enumerate() { line.write_byte(offset + i, b) },
+            DataType::DoubleWord(d) => for (i, &b) in d.to_le_bytes().iter().enumerate() { line.write_byte(offset + i, b) },
+        }
+        Ok(())
+    }
+
+    fn stats(&self) -> &MemStats { &self.stats }
+}
+
+/* ===================================================================== */
+/* ==============     MemLevelAccess & CacheAddressing     ============= */
+/* ===================================================================== */
+
+impl<const B: usize, const W: usize, const A: usize>
+    MemLevelAccess for SetAssocCache<B, W, A>
+{
+    fn write_line(&mut self, addr: usize, _wpl: usize, data: Vec<u8>) {
+        let (tag, idx, ..) = self.decode_addr(addr);
+
+        /* ---- try invalid slot first ---- */
+        if let Some((way, line)) = self.sets
+            .iter_mut()
+            .enumerate()                      // way index
+            .map(|(w, v)| (w, &mut v[idx]))
+            .find(|(_, l)| !l.is_valid())
+        {
+            line.write_line(tag, data);
+            /* NRU: reset age counter for the new line */
+            if matches!(self.eviction, EvictionPolicy::Nru) {
+                self.sets[way][idx].stamp_now(); // initial “used” = false (time == 0)
+                self.sets[way][idx].reset_time(); // assume you have reset_time() that sets 0
+            }
+            return;
+        }
+
+        /* ---- evict victim ---- */
+        let way  = self.victim_way(idx);
+        let line = &mut self.sets[way][idx];
+        line.write_line(tag, data);
+
+        if matches!(self.eviction, EvictionPolicy::Nru) {
+            line.reset_time();   // clear ref-bit
+        }
+    }
+
+    fn fetch_line(&self, _addr: usize, _wpl: usize) -> Vec<u8> {
+        vec![0; WORDSIZE * W]   // upper levels overwrite
+    }
+}
+
+/* ---------------- CacheAddressing helpers ---------------- */
+
+impl<const B: usize, const W: usize, const A: usize>
+    CacheAddressing for SetAssocCache<B, W, A>
+{
+    #[inline] fn byte_bits (&self) -> usize { self.byte_bits() }
+    #[inline] fn word_bits (&self) -> usize { self.word_bits() }
+    #[inline] fn index_bits(&self) -> usize { self.index_bits() }
+
+    fn decode_addr(&self, a: usize) -> (usize, usize, usize, usize) { self.decode_addr(a) }
+
+    fn is_line_dirty(&self, a: usize) -> bool {
+        self.find_line(a)
+            .map(|(w, idx)| self.sets[w][idx].is_dirty())
+            .unwrap_or(false)
+    }
+
+    fn get_evict_line_data(&self, a: usize) -> Vec<u8> {
+        let idx = self.get_index(a);
+        let way = self.victim_way(idx);
+        self.sets[way][idx].get_data()
+    }
+
+    fn get_writeback_addr(&self, a: usize) -> usize {
+        let idx = self.get_index(a);
+        let way = self.victim_way(idx);
+        let tag = self.sets[way][idx].tag();
+        self.base_addr(tag, idx)
+    }
+
+    fn get_base_addr(&self, a: usize) -> usize {
+        let (tag, idx, ..) = self.decode_addr(a);
+        self.base_addr(tag, idx)
+    }
+
+    #[inline] fn get_tag        (&self, a: usize) -> usize { let (t, ..) = self.decode_addr(a); t }
+    #[inline] fn get_index      (&self, a: usize) -> usize { let (_, i, ..) = self.decode_addr(a); i }
+    #[inline] fn get_word_offset(&self, a: usize) -> usize { let (_, _, w, ..) = self.decode_addr(a); w }
+    #[inline] fn get_byte_offset(&self, a: usize) -> usize { let (_, _, _, b) = self.decode_addr(a); b }
+}
 
 #[cfg(test)]
 mod tests {
