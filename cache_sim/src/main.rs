@@ -10,15 +10,17 @@ mod set_associative;
 
 use crate::memory::{Memory, DataTypeSize, DataType, MemoryAccess};
 
-const TRACE_FILE: &str = "mem_files/med_flappy.txt";
+// const TRACE_FILE: &str = "mem_files/big_minecraft_log2.txt";
+const TRACE_FILE: &str = "mem_files/big_flappy_log2.txt";
 // const TRACE_FILE: &str = "mem_files/med_flappy.txt";
+// const TRACE_FILE: &str = "mem_files/small_flappy.txt";
 
 /* ── compile-time cache geometry ─────────────────────────────────────── */
 const FULL_BYTES         : usize = 1 << 22;   // 4 MiB main memory
 const IM_L1_BYTES        : usize = 1 << 14;   // 16 KiB I-cache
 const IM_L1_WORDS_PER_LN : usize = 8;         // 8 words / line
-const DM_L1_BYTES        : usize = 1 << 14;   // 16 KiB D-cache
-const DM_L1_WORDS_PER_LN : usize = 8;         // 8 words / line
+const DM_L1_BYTES        : usize = 1 << 13;   // 8 KiB D-cache
+const DM_L1_WORDS_PER_LN : usize = 4;         // 4 words / line
 
 type SimMem = Memory<
     FULL_BYTES,
@@ -27,8 +29,8 @@ type SimMem = Memory<
     2, 2
 >;
 
-const DM_BASE  : usize = 0x6000;        // start of data region
-const MMIO_BASE: usize = 0x0001_0000;  // start of MMIO region
+const DM_BASE  : usize = 0x0060_0000;  // start of data region
+const MMIO_BASE: usize = 0xA000_0000;  // start of MMIO region
 
 /* ─────────────────────────────────────────────────────────────────────── */
 
@@ -37,6 +39,7 @@ fn main() -> Result<()> {
 
     let mut mem = SimMem::new(MMIO_BASE, DM_BASE);
 
+    let mut counter = 0;
     for (line_no, line) in reader.lines().flatten().enumerate() {
         if line.trim().is_empty() { continue; }
 
@@ -56,6 +59,7 @@ fn main() -> Result<()> {
             _ => { eprintln!("L{line_no}: unsupported size {sz_b}"); continue; }
         };
 
+        counter += 1;
         match op {
             /* ---------------- READ ---------------- */
             'r' => {
@@ -92,6 +96,8 @@ fn main() -> Result<()> {
 
     /* optional: show cache & memory statistics */
     mem.print_summary();
+    
+    println!("Completed {counter} operations");
     Ok(())
 }
 

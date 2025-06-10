@@ -117,8 +117,8 @@ impl<
         assert!(IM_L1_WORDS_PER_LINE.is_power_of_two(), "IM line size must be power of two");
         assert!(DM_L1_BYTES.is_power_of_two(), "DM L1 size must be power of two");
         assert!(DM_L1_WORDS_PER_LINE.is_power_of_two(), "DM line size must be power of two");
-        assert!(mmio_start_addr.is_power_of_two(), 
-            "Instructions addr must start at pow of 2 {mmio_start_addr:x}");
+        // assert!(mmio_start_addr.is_power_of_two(), 
+            // "Instructions addr must start at pow of 2 {mmio_start_addr:x}");
         // assert!(dm_addr_start.is_power_of_two(), 
             // "Data addr must start at pow of 2 {dm_addr_start:x}");
 
@@ -139,11 +139,12 @@ impl<
     fn choose_cache(&self, addr: usize) -> Option<WhichL1> {
         if addr < self.dm_start_addr{
             return Some(WhichL1::Instr);
-        } else if addr < FULL_BYTES {
+        } else if addr < self.mmio_start_addr {
             return Some(WhichL1::Data);
         } else {
             return None;
         }
+        
     }
 
     pub fn print_summary(&self) {
@@ -209,7 +210,13 @@ impl<
                             self.main.write_line(write_back_addr, IM_L1_WORDS_PER_LINE, write_back_line);
                         }
 
-                        let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
+                        // let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
+                        let new_line = if fetch_base_addr < self.size {
+                            self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE)
+                        } else {
+                            vec![0; IM_L1_WORDS_PER_LINE * WORDSIZE]
+                        };
+                        
                         self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
                         self.im.read(addr, size, true)
                     }
@@ -236,7 +243,14 @@ impl<
                             self.main.write_line(write_back_addr, DM_L1_WORDS_PER_LINE, write_back_line);
                         }
 
-                        let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
+
+                        let new_line = if fetch_base_addr < self.size {
+                            self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE)
+                        } else {
+                            vec![0; DM_L1_WORDS_PER_LINE * WORDSIZE]
+                        };
+
+                        // let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
                         self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
                         self.dm.read(addr, size, true)
                     }
@@ -278,7 +292,12 @@ impl<
                             self.main.write_line(write_back_addr, IM_L1_WORDS_PER_LINE, write_back_line);
                         }
 
-                        let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
+                        let new_line = if fetch_base_addr < self.size {
+                            self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE)
+                        } else {
+                            vec![0; IM_L1_WORDS_PER_LINE * WORDSIZE]
+                        };
+                        // let new_line = self.main.fetch_line(fetch_base_addr, IM_L1_WORDS_PER_LINE);
                         self.im.write_line(fetch_base_addr, IM_L1_WORDS_PER_LINE, new_line);
                         self.im.write(data, addr, true)
                     }
@@ -305,7 +324,12 @@ impl<
                             self.main.write_line(write_back_addr, DM_L1_WORDS_PER_LINE, write_back_line);
                         }
 
-                        let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
+                        // let new_line = self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE);
+                        let new_line = if fetch_base_addr < self.size {
+                            self.main.fetch_line(fetch_base_addr, DM_L1_WORDS_PER_LINE)
+                        } else {
+                            vec![0; DM_L1_WORDS_PER_LINE * WORDSIZE]
+                        };
                         self.dm.write_line(fetch_base_addr, DM_L1_WORDS_PER_LINE, new_line);
                         self.dm.write(data, addr, true)
                     }
